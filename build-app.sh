@@ -40,9 +40,15 @@ PLIST
 
 codesign --force --sign - "$APP"
 
-# 关掉正在运行的旧版本，装进“应用程序”，再打开
+# 关掉正在运行的旧版本，装进“应用程序”，再打开。
+# 没有管理员权限、写不进 /Applications 的话，就装到自己的 ~/Applications 里
+DEST="/Applications"
+if [ ! -w "$DEST" ]; then
+    DEST="$HOME/Applications"
+    mkdir -p "$DEST"
+fi
 pkill -x Clothesline 2>/dev/null || true
-rm -rf /Applications/Clothesline.app
-cp -R "$APP" /Applications/
-open /Applications/Clothesline.app
-echo "做好了，已经装到 /Applications/Clothesline.app 并打开"
+rm -rf "$DEST/Clothesline.app"
+cp -R "$APP" "$DEST/"
+open "$DEST/Clothesline.app"
+echo "做好了，已经装到 $DEST/Clothesline.app 并打开"
