@@ -28,7 +28,6 @@ final class Herd {
         var facing: Double         // 1 朝右，-1 朝左
         var nibble = 0             // 还要吃多少拍
         var step = 0               // 走了多少步
-        var hopping = false        // 被点了，正在跳
 
         var pose: Pose { nibble > 0 ? .nibble : (step % 2 == 1 ? .walk1 : .walk0) }
         var bob: Double { pose == .walk1 ? -1 : 0 }
@@ -83,18 +82,6 @@ final class Herd {
             members[i] = m
         }
     }
-
-    // 点一下跳一下
-    func hop(_ id: Int) {
-        guard let i = members.firstIndex(where: { $0.id == id }), !members[i].hopping else { return }
-        members[i].hopping = true
-        Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(200))
-            if let self, let i = self.members.firstIndex(where: { $0.id == id }) {
-                self.members[i].hopping = false
-            }
-        }
-    }
 }
 
 struct AnimalsView: View {
@@ -107,17 +94,14 @@ struct AnimalsView: View {
                 let x = CGFloat(m.x)
                 let feet = (17.2 - 9) * m.scale        // 脚底离画布中心多远
                 AnimalSprite(kind: m.kind, pose: m.pose, scale: m.scale)
-                    .onTapGesture { herd.hop(m.id) }
-                    .allowsHitTesting(m.kind != .rooster)   // 公鸡点不了
                     .scaleEffect(x: m.facing, y: 1)     // 画的时候朝右，往左走就镜像
                     .rotationEffect(.radians(rope.angle(at: x)), anchor: UnitPoint(x: 0.5, y: 17.2 / 18))
                     .shadow(color: .black.opacity(0.3), radius: 1.2, y: 1)
-                    .offset(y: m.hopping ? -24 : 0)
-                    .animation(m.hopping ? .easeOut(duration: 0.2) : .easeIn(duration: 0.2), value: m.hopping)
                     .position(x: x, y: rope.y(at: x) - feet + 1 + m.bob)
                     .animation(.linear(duration: Herd.tick), value: m.x)   // 两拍之间平滑地走
             }
         }
+        .allowsHitTesting(false)                        // 小动物点不了，点击会穿过去
         .onAppear { herd.start(width: Double(rope.width)) }
         .onChange(of: rope.width) { _, width in herd.width = Double(width) }
     }
