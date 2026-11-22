@@ -1,28 +1,22 @@
 import AppKit
-import ScreenCaptureKit
+import SwiftUI
 import QuickLookThumbnailing
 
-// 绳子上挂的一样东西：要么是一个软件，要么是一个截图/录屏
+// 绳子上挂的一张截图或一段录屏
 struct LineItem: Identifiable {
-    enum Kind {
-        case app(NSRunningApplication)
-        case capture(URL)
-    }
-    let id: String
-    let kind: Kind
-    let title: String
-    let date: Date          // 排序用：软件=最后一次用它的时间，截图=拍下的时间
-    let icon: NSImage?
+    let url: URL
+    let date: Date
     let preview: NSImage?
+    let fromClipboard: Bool     // 原来只在剪贴板里、没存成文件的截图
 
-    var isVideo: Bool {
-        ["mov", "mp4"].contains(fileURL?.pathExtension.lowercased() ?? "")
-    }
+    var id: String { url.path }
+    var isVideo: Bool { ["mov", "mp4"].contains(url.pathExtension.lowercased()) }
 
-    // 截图/录屏的文件位置；软件没有
-    var fileURL: URL? {
-        if case .capture(let url) = kind { return url }
-        return nil
+    // 今天的显示时间，更早的显示日期
+    var title: String {
+        Calendar.current.isDateInToday(date)
+            ? date.formatted(date: .omitted, time: .shortened)
+            : date.formatted(.dateTime.month().day())
     }
 
     // 由 id 算出来的固定数字，用来让每张图晃的幅度、快慢都不一样
@@ -33,135 +27,126 @@ struct LineItem: Identifiable {
 final class LineStore: ObservableObject {
     @Published var items: [LineItem] = []
 
-    private var lastUsed: [pid_t: Date] = [:]        // 每个软件最后一次在最前面的时间
-    private var appPreviews: [pid_t: NSImage] = [:]  // 每个软件最近一次截到的窗口预览
-    private var captureThumbs: [URL: NSImage] = [:]  // 截图/录屏的缩略图（算过就存起来）
+    static let maxItems = 20
+    private var thumbs: [URL: NSImage] = [:]                         // 缩略图（算过就存起来）
+    private var lastClipboardChange = NSPasteboard.general.changeCount
+
+    // 只在剪贴板里的截图，帮你存一份到这里（“图片”文件夹里的“晾衣绳”）
+    let clipboardFolder = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Pictures/晾衣绳", isDirectory: true)
 
     func start() {
-        CGRequestScreenCaptureAccess()   // 第一次会弹窗要“屏幕录制”权限，用来拍窗口预览
         Task {
             while true {
+                saveClipboardScreenshot()
                 await refresh()
-                try? await Task.sleep(for: .seconds(2))   // 每 2 秒刷新一次
+                try? await Task.sleep(for: .seconds(1))   // 每秒看一次
             }
         }
     }
 
     func refresh() async {
-        // 1. 记下现在在最前面的软件
-        if let front = NSWorkspace.shared.frontmostApplication {
-            lastUsed[front.processIdentifier] = Date()
-        }
+        // 存成文件的截图/录屏 + 从剪贴板帮你存下来的截图，合在一起按时间排，取最新 20 个
+        var found: [URL: Date] = [:]
+        for (url, date) in files(in: screenshotFolder(), onlyScreenshots: true) { found[url] = date }
+        for (url, date) in files(in: clipboardFolder, onlyScreenshots: false) { found[url] = date }
+        let latest = found.sorted { $0.value > $1.value }.prefix(Self.maxItems)
 
-        // 2. 所有打开的软件（就是 Dock 里有小圆点的那些）
-        let apps = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }
-        await updateAppPreviews(for: apps)
-
-        var newItems: [LineItem] = apps.map { app in
-            LineItem(
-                id: "app-\(app.processIdentifier)",
-                kind: .app(app),
-                title: app.localizedName ?? "",
-                date: lastUsed[app.processIdentifier] ?? app.launchDate ?? .distantPast,
-                icon: app.icon,
-                preview: appPreviews[app.processIdentifier])
-        }
-
-        // 3. 最新的 20 个截图/录屏
-        for (url, date) in latestCaptures(limit: 20) {
+        var newItems: [LineItem] = []
+        for (url, date) in latest {
             newItems.append(LineItem(
-                id: "file-\(url.path)",
-                kind: .capture(url),
-                title: date.formatted(date: .omitted, time: .shortened),
-                date: date,
-                icon: nil,
-                preview: await thumbnail(for: url)))
+                url: url, date: date, preview: await thumbnail(for: url),
+                fromClipboard: url.deletingLastPathComponent().path == clipboardFolder.path))
         }
-
-        // 4. 按时间排，最新的在最左边
-        newItems.sort { $0.date > $1.date }
-        items = newItems
-    }
-
-    // 给每个软件最大的那个窗口拍一张小预览图
-    private func updateAppPreviews(for apps: [NSRunningApplication]) async {
-        guard CGPreflightScreenCaptureAccess() else { return }   // 没给权限就只显示图标
-        guard let content = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true) else { return }
-
-        for app in apps {
-            let pid = app.processIdentifier
-            let windows = content.windows.filter {
-                $0.owningApplication?.processID == pid && $0.windowLayer == 0
-                    && $0.frame.width > 100 && $0.frame.height > 100
-            }
-            guard let window = windows.max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height })
-            else { continue }   // 最小化/隐藏的软件拍不到，就继续用上次拍到的
-
-            let config = SCStreamConfiguration()
-            config.width = 320
-            config.height = Int(320 * window.frame.height / window.frame.width)
-            config.showsCursor = false
-            let filter = SCContentFilter(desktopIndependentWindow: window)
-            if let image = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config) {
-                appPreviews[pid] = NSImage(cgImage: image, size: .zero)
-            }
+        // 有变化才更新，免得界面一直重画
+        if newItems.map(\.id) != items.map(\.id) || newItems.map({ $0.preview == nil }) != items.map({ $0.preview == nil }) {
+            items = newItems
         }
     }
+
+    // MARK: 剪贴板里的截图
+
+    // 截图只放进剪贴板时（比如 ⌃⇧⌘4，或微信截图），帮你存成文件，这样也能挂上去
+    private func saveClipboardScreenshot() {
+        let pasteboard = NSPasteboard.general
+        guard pasteboard.changeCount != lastClipboardChange else { return }
+        lastClipboardChange = pasteboard.changeCount
+
+        // 只要“纯图片”：截图到剪贴板就是这样。
+        // 从网页、访达里复制的东西会带着网址、文件或文字，不算截图。
+        let types = Set(pasteboard.types ?? [])
+        let notScreenshot: [NSPasteboard.PasteboardType] = [.fileURL, .URL, .html, .string, .rtf]
+        guard types.contains(.png) || types.contains(.tiff),
+              notScreenshot.allSatisfy({ !types.contains($0) }),
+              let data = pngData(from: pasteboard) else { return }
+
+        try? FileManager.default.createDirectory(at: clipboardFolder, withIntermediateDirectories: true)
+        let name = "剪贴板截屏 " + Self.nameFormatter.string(from: Date()) + ".png"
+        try? data.write(to: clipboardFolder.appendingPathComponent(name))
+    }
+
+    private func pngData(from pasteboard: NSPasteboard) -> Data? {
+        if let png = pasteboard.data(forType: .png) { return png }
+        guard let tiff = pasteboard.data(forType: .tiff), let bitmap = NSBitmapImageRep(data: tiff) else { return nil }
+        return bitmap.representation(using: .png, properties: [:])
+    }
+
+    private static let nameFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH.mm.ss"
+        return formatter
+    }()
+
+    // MARK: 存成文件的截图
 
     // 截图默认存在桌面；如果你在“截屏”App 里改过位置，就读那个位置
-    private func captureFolder() -> URL {
+    private func screenshotFolder() -> URL {
         if let path = UserDefaults(suiteName: "com.apple.screencapture")?.string(forKey: "location") {
             return URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
         }
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop")
     }
 
-    private func latestCaptures(limit: Int) -> [(URL, Date)] {
+    private func files(in folder: URL, onlyScreenshots: Bool) -> [(URL, Date)] {
         let prefixes = ["截屏", "录屏", "屏幕快照", "屏幕录制", "Screenshot", "Screen Shot", "Screen Recording"]
         let types = ["png", "jpg", "jpeg", "heic", "mov", "mp4"]
-        let files = (try? FileManager.default.contentsOfDirectory(
-            at: captureFolder(), includingPropertiesForKeys: [.creationDateKey])) ?? []
+        let all = (try? FileManager.default.contentsOfDirectory(
+            at: folder, includingPropertiesForKeys: [.creationDateKey], options: .skipsHiddenFiles)) ?? []
 
-        let captures = files.filter { url in
-            types.contains(url.pathExtension.lowercased())
-                && prefixes.contains { url.lastPathComponent.hasPrefix($0) }
+        return all.compactMap { url in
+            guard types.contains(url.pathExtension.lowercased()) else { return nil }
+            if onlyScreenshots, !prefixes.contains(where: { url.lastPathComponent.hasPrefix($0) }) { return nil }
+            let date = (try? url.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
+            return (url, date)
         }
-        let dated = captures.map { url in
-            (url, (try? url.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast)
-        }
-        return Array(dated.sorted { $0.1 > $1.1 }.prefix(limit))
     }
 
     // 图片和视频都能用系统的 Quick Look 生成缩略图
     private func thumbnail(for url: URL) async -> NSImage? {
-        if let cached = captureThumbs[url] { return cached }
+        if let cached = thumbs[url] { return cached }
         let request = QLThumbnailGenerator.Request(
             fileAt: url, size: CGSize(width: 160, height: 100), scale: 2, representationTypes: .thumbnail)
         guard let rep = try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request) else { return nil }
-        captureThumbs[url] = rep.nsImage
+        thumbs[url] = rep.nsImage
         return rep.nsImage
     }
 
-    // 点一下：软件就切过去（最小化的窗口也会弹回来），截图/录屏就打开
+    // MARK: 点击和右键菜单
+
     func open(_ item: LineItem) {
-        switch item.kind {
-        case .app(let app):
-            if let url = app.bundleURL {
-                NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
-            }
-        case .capture(let url):
-            NSWorkspace.shared.open(url)
+        NSWorkspace.shared.open(item.url)
+    }
+
+    func revealInFinder(_ item: LineItem) {
+        NSWorkspace.shared.activateFileViewerSelecting([item.url])
+    }
+
+    // 删除：先把文件移到废纸篓（还能拿回来），再让它像被风吹走一样飞出去
+    func trash(_ item: LineItem) {
+        try? FileManager.default.trashItem(at: item.url, resultingItemURL: nil)
+        thumbs[item.url] = nil
+        withAnimation(.linear(duration: 1.3)) {
+            items.removeAll { $0.id == item.id }
         }
-    }
-
-    // 删除截图/录屏：移到废纸篓（还能从废纸篓里拿回来）
-    func trash(_ url: URL) {
-        try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
-        captureThumbs[url] = nil
-        items.removeAll { $0.fileURL == url }
-    }
-
-    func revealInFinder(_ url: URL) {
-        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 }

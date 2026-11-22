@@ -9,19 +9,25 @@ struct ClotheslineView: View {
             let rope = Rope(width: geo.size.width)
 
             ZStack(alignment: .topLeading) {
-                // 挂着的东西，太多就左右滚动
+                // 挂着的截图和录屏，太多就左右滚动
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: 22) {
                         ForEach(store.items) { item in
                             HangingCard(item: item)
                                 .onTapGesture { store.open(item) }
-                                .onDrag { dragProvider(for: item) }
-                                .contextMenu { menu(for: item) }
+                                .onDrag { NSItemProvider(contentsOf: item.url) ?? NSItemProvider() }
+                                .contextMenu {
+                                    Button("打开") { store.open(item) }
+                                    Button("在访达中显示") { store.revealInFinder(item) }
+                                    Divider()
+                                    Button("删除（移到废纸篓）", role: .destructive) { store.trash(item) }
+                                }
                                 .modifier(Sway(seed: item.seed))
                                 // 按自己在屏幕上的位置，往下挪到绳子的高度
                                 .visualEffect { content, proxy in
                                     content.offset(y: rope.y(at: proxy.frame(in: .global).midX) - rope.topY)
                                 }
+                                .transition(.blownAway)
                         }
                     }
                     .padding(.horizontal, 60)
@@ -46,24 +52,37 @@ struct ClotheslineView: View {
         }
         .animation(.spring(duration: 0.5), value: store.items.map(\.id))
     }
+}
 
-    // 右键菜单：截图/录屏多两个选项
-    @ViewBuilder
-    private func menu(for item: LineItem) -> some View {
-        Button("打开") { store.open(item) }
-        if let url = item.fileURL {
-            Button("在访达中显示") { store.revealInFinder(url) }
-            Divider()
-            Button("删除（移到废纸篓）", role: .destructive) { store.trash(url) }
-        }
+// 删除时：先被风吹得抖几下，然后翻着跟头飞走
+struct BlownAway: ViewModifier, Animatable {
+    var progress: Double     // 0 = 好好挂着，1 = 已经飞走
+
+    nonisolated var animatableData: Double {
+        get { progress }
+        set { progress = newValue }
     }
 
-    // 截图/录屏可以直接拖进微信、Word 之类的地方
-    private func dragProvider(for item: LineItem) -> NSItemProvider {
-        if let url = item.fileURL, let provider = NSItemProvider(contentsOf: url) {
-            return provider
-        }
-        return NSItemProvider()
+    func body(content: Content) -> some View {
+        let p = progress
+        // 前 20%：风来了，抖几下
+        let shake = p < 0.2 ? sin(p / 0.2 * 4 * .pi) * 9 : 0
+        // 后 80%：被吹走，越飞越快、上下飘、翻转、变小、变淡
+        let q = max(0, (p - 0.2) / 0.8)
+        content
+            .rotation3DEffect(.degrees(sin(q * 3 * .pi) * 55), axis: (x: 0, y: 1, z: 0.2), anchor: .top)
+            .rotationEffect(.degrees(shake + q * 40 + sin(q * 4 * .pi) * 12), anchor: .top)
+            .scaleEffect(1 - q * 0.35, anchor: .top)
+            .offset(x: q * q * 380, y: -q * 50 + sin(q * 3 * .pi) * 14)
+            .opacity(1 - pow(q, 1.6))
+    }
+}
+
+extension AnyTransition {
+    static var blownAway: AnyTransition {
+        .asymmetric(
+            insertion: .opacity.combined(with: .scale(scale: 0.85, anchor: .top)),
+            removal: .modifier(active: BlownAway(progress: 1), identity: BlownAway(progress: 0)))
     }
 }
 
@@ -117,18 +136,24 @@ struct HangingCard: View {
                             .foregroundStyle(.white, .black.opacity(0.4))
                     }
                 }
-                // 有窗口预览的软件，右下角放个小图标，好认
+                // 原来只在剪贴板里的截图，右下角放个小标记
                 .overlay(alignment: .bottomTrailing) {
-                    if let icon = item.icon {
-                        Image(nsImage: icon).resizable().frame(width: 24, height: 24).offset(x: 6, y: 6)
+                    if item.fromClipboard {
+                        Image(systemName: "doc.on.clipboard.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.white)
+                            .padding(4)
+                            .background(.black.opacity(0.45), in: Circle())
+                            .padding(4)
                     }
                 }
                 .shadow(color: .black.opacity(0.3), radius: 4, y: 3)
-        } else if let icon = item.icon {
-            Image(nsImage: icon)
-                .resizable()
-                .frame(width: 60, height: 60)
-                .shadow(color: .black.opacity(0.25), radius: 3, y: 2)
+        } else {
+            Image(systemName: item.isVideo ? "film" : "photo")
+                .font(.system(size: 34))
+                .foregroundStyle(.white)
+                .shadow(color: .black.opacity(0.5), radius: 2)
+                .frame(width: 88, height: 60)
         }
     }
 }
