@@ -28,24 +28,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         store.start()
     }
 
-    // 屏幕顶部一条透明的、永远浮在最上面的窗口，晾衣绳就画在里面
+    // 屏幕顶部一条透明的、永远浮在最上面的窗口，晾衣绳就画在里面。
+    // 窗口从屏幕最顶上开始（盖住菜单栏那一条），这样图片往上飞的时候能一直飞出屏幕。
     private func makePanel() {
         guard let screen = NSScreen.main else { return }
-        let area = screen.visibleFrame          // 去掉菜单栏和 Dock 之后的区域
-        let height: CGFloat = 240
+        let area = screen.visibleFrame                          // 去掉菜单栏和 Dock 之后的区域
+        let menuBarHeight = screen.frame.maxY - area.maxY
+        let height: CGFloat = menuBarHeight + 240
         panel = NSPanel(
-            contentRect: NSRect(x: area.minX, y: area.maxY - height, width: area.width, height: height),
+            contentRect: NSRect(x: area.minX, y: screen.frame.maxY - height, width: area.width, height: height),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered, defer: false)
-        panel.level = .floating                 // 浮在普通窗口上面
+        panel.level = .statusBar                // 比菜单栏还高一层，飞上去的图片不会被菜单栏挡住
         panel.isOpaque = false
-        panel.backgroundColor = .clear          // 透明：没挂东西的地方鼠标能点穿
+        panel.backgroundColor = .clear          // 透明：没挂东西的地方鼠标能点穿（菜单栏照常能点）
         panel.hasShadow = false
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary]  // 每个桌面都有
 
-        let hosting = NSHostingView(rootView: ClotheslineView(store: store))
+        let hosting = NSHostingView(rootView: ClotheslineView(store: store, topInset: menuBarHeight))
         hosting.sizingOptions = []              // 别让 SwiftUI 改窗口大小
         panel.contentView = hosting
+        store.hostView = hosting                // 把文件拖到别的软件时要用
         panel.orderFrontRegardless()
     }
 

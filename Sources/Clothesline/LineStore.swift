@@ -141,12 +141,40 @@ final class LineStore: ObservableObject {
         NSWorkspace.shared.activateFileViewerSelecting([item.url])
     }
 
-    // 删除：先把文件移到废纸篓（还能拿回来），再让它像被风吹走一样飞出去
+    // 删除：先把文件移到废纸篓（还能拿回来），再让它翻两圈、被风吹到远方
+    nonisolated static let deleteDuration = 3.2
+
     func trash(_ item: LineItem) {
         try? FileManager.default.trashItem(at: item.url, resultingItemURL: nil)
         thumbs[item.url] = nil
-        withAnimation(.linear(duration: 1.3)) {
+        withAnimation(.linear(duration: Self.deleteDuration)) {
             items.removeAll { $0.id == item.id }
         }
+    }
+
+    // MARK: 把文件拖到别的软件里（微信、Word……）
+
+    weak var hostView: NSView?                 // 晾衣绳所在的那个视图，开始拖动要用
+    private let dragSource = FileDragSource()
+
+    func beginFileDrag(_ item: LineItem) {
+        guard let view = hostView, let event = NSApp.currentEvent,
+              event.type == .leftMouseDragged else { return }
+        let image = item.preview ?? NSWorkspace.shared.icon(forFile: item.url.path)
+        let scale = min(1, 120 / max(image.size.width, image.size.height, 1))
+        let size = NSSize(width: image.size.width * scale, height: image.size.height * scale)
+        let point = view.convert(event.locationInWindow, from: nil)
+        let dragItem = NSDraggingItem(pasteboardWriter: item.url as NSURL)
+        dragItem.setDraggingFrame(NSRect(x: point.x - size.width / 2, y: point.y - size.height / 2,
+                                         width: size.width, height: size.height), contents: image)
+        view.beginDraggingSession(with: [dragItem], event: event, source: dragSource)
+    }
+}
+
+@MainActor
+final class FileDragSource: NSObject, NSDraggingSource {
+    func draggingSession(_ session: NSDraggingSession,
+                         sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        context == .outsideApplication ? .copy : []
     }
 }
