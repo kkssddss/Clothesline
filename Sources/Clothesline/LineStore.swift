@@ -46,6 +46,8 @@ final class LineStore: ObservableObject {
     }
 
     func refresh() async {
+        // 有图片正在飞走时先不刷新，免得动画飞到一半被打断
+        guard leaving.isEmpty else { return }
         // 存成文件的截图/录屏 + 从剪贴板帮你存下来的截图，合在一起按时间排，取最新 20 个
         var found: [URL: Date] = [:]
         for (url, date) in files(in: screenshotFolder(), onlyScreenshots: true) { found[url] = date }
@@ -58,7 +60,8 @@ final class LineStore: ObservableObject {
                 url: url, date: date, preview: await thumbnail(for: url),
                 fromClipboard: url.deletingLastPathComponent().path == clipboardFolder.path))
         }
-        // 有变化才更新，免得界面一直重画
+        // 有变化才更新，免得界面一直重画（等缩略图的时候如果开始删东西了，这次也不更新）
+        guard leaving.isEmpty else { return }
         if newItems.map(\.id) != items.map(\.id) || newItems.map({ $0.preview == nil }) != items.map({ $0.preview == nil }) {
             items = newItems
         }
@@ -141,14 +144,19 @@ final class LineStore: ObservableObject {
         NSWorkspace.shared.activateFileViewerSelecting([item.url])
     }
 
-    // 删除：先把文件移到废纸篓（还能拿回来），再让它翻两圈、被风吹到远方
+    // 删除：先把文件移到废纸篓（还能拿回来），图片翻两圈、被风吹到远方，飞完了才从绳子上拿掉
     nonisolated static let deleteDuration = 3.2
+    @Published private(set) var leaving: Set<String> = []     // 正在飞走的图片
 
-    func trash(_ item: LineItem) {
+    func delete(_ item: LineItem) {
+        guard !leaving.contains(item.id) else { return }
         try? FileManager.default.trashItem(at: item.url, resultingItemURL: nil)
         thumbs[item.url] = nil
-        withAnimation(.linear(duration: Self.deleteDuration)) {
+        leaving.insert(item.id)
+        Task {
+            try? await Task.sleep(for: .seconds(Self.deleteDuration))
             items.removeAll { $0.id == item.id }
+            leaving.remove(item.id)
         }
     }
 
@@ -157,9 +165,10 @@ final class LineStore: ObservableObject {
     weak var hostView: NSView?                 // 晾衣绳所在的那个视图，开始拖动要用
     private let dragSource = FileDragSource()
 
-    func beginFileDrag(_ item: LineItem) {
+    // 开始成功返回 true
+    func beginFileDrag(_ item: LineItem) -> Bool {
         guard let view = hostView, let event = NSApp.currentEvent,
-              event.type == .leftMouseDragged else { return }
+              event.type == .leftMouseDragged else { return false }
         let image = item.preview ?? NSWorkspace.shared.icon(forFile: item.url.path)
         let scale = min(1, 120 / max(image.size.width, image.size.height, 1))
         let size = NSSize(width: image.size.width * scale, height: image.size.height * scale)
@@ -168,6 +177,7 @@ final class LineStore: ObservableObject {
         dragItem.setDraggingFrame(NSRect(x: point.x - size.width / 2, y: point.y - size.height / 2,
                                          width: size.width, height: size.height), contents: image)
         view.beginDraggingSession(with: [dragItem], event: event, source: dragSource)
+        return true
     }
 }
 

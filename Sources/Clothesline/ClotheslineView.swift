@@ -20,15 +20,18 @@ struct ClotheslineView: View {
                                     Button("打开") { store.open(item) }
                                     Button("在访达中显示") { store.revealInFinder(item) }
                                     Divider()
-                                    Button("删除（移到废纸篓）", role: .destructive) { store.trash(item) }
+                                    Button("删除（移到废纸篓）", role: .destructive) { store.delete(item) }
                                 }
-                                .modifier(PullUpToDelete(item: item, store: store))
+                                .modifier(PullUpToDelete(item: item, store: store,
+                                                         leaving: store.leaving.contains(item.id)))
                                 .modifier(Sway(seed: item.seed))
                                 // 按自己在屏幕上的位置，往下挪到绳子的高度
                                 .visualEffect { content, proxy in
                                     content.offset(y: rope.y(at: proxy.frame(in: .global).midX) - rope.topY)
                                 }
-                                .transition(.floatAway)
+                                // 新挂上来的淡入；飞走的那张动画放完已经看不见了，直接拿掉
+                                .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.85, anchor: .top)),
+                                                        removal: .identity))
                         }
                     }
                     .padding(.horizontal, 60)
@@ -56,18 +59,22 @@ struct ClotheslineView: View {
     }
 }
 
-// 拖着图片往上拉，拉过一定高度松手就删除；往别的方向拖，就是把文件拖到别的软件里
+// 按住图片可以随便拖，它会跟着鼠标走：
+//   往上拉过 70 点再松手 → 删除（翻两圈、被风吹走）
+//   没拉够就松手 → 弹回绳子上
+//   往下拖 → 把文件拖到别的软件里（微信、Word……）
 struct PullUpToDelete: ViewModifier {
     let item: LineItem
     let store: LineStore
+    let leaving: Bool                           // 正在飞走
     @State private var pull: CGSize = .zero
-    @State private var mode: Mode = .none
-    private let threshold: CGFloat = 70        // 往上拉超过 70 点，松手就删
-
-    enum Mode { case none, pulling, draggingFile }
+    @State private var flight = 0.0             // 飞走动画走到哪了（0～1）
+    @State private var draggingFile = false
+    @GestureState private var pressing = false  // 手指还按着（拖动被打断时会自动变回 false）
+    private let threshold: CGFloat = 70
 
     func body(content: Content) -> some View {
-        let ready = pull.height < -threshold
+        let ready = pull.height < -threshold && !leaving
         content
             .overlay(alignment: .top) {
                 if ready {
@@ -82,32 +89,49 @@ struct PullUpToDelete: ViewModifier {
                 }
             }
             .scaleEffect(ready ? 1.06 : 1)
-            .offset(x: pull.width * 0.3, y: min(pull.height, 0))
-            .animation(.spring(duration: 0.25), value: ready)
+            .animation(.spring(duration: 0.2), value: ready)      // 只给垃圾桶和放大加动画，拖动本身不加
+            .offset(pull)                                          // 跟着鼠标走
+            .modifier(FloatAway(progress: flight))
             .gesture(
-                DragGesture(minimumDistance: 4, coordinateSpace: .global)
+                DragGesture(minimumDistance: 3, coordinateSpace: .global)
+                    .updating($pressing) { _, state, _ in state = true }
                     .onChanged { value in
+                        guard !leaving, !draggingFile else { return }
                         let t = value.translation
-                        if hypot(t.width, t.height) < 8 { mode = .none }     // 新的一次拖动
-                        if mode == .none {
-                            if t.height < 0 && abs(t.height) > abs(t.width) {
-                                mode = .pulling
-                            } else if hypot(t.width, t.height) >= 6 {
-                                mode = .draggingFile
-                                store.beginFileDrag(item)
-                            }
+                        // 明显往下拖：改成把文件拖出去
+                        if t.height > 28, t.height > abs(t.width), store.beginFileDrag(item) {
+                            draggingFile = true
+                            withAnimation(.spring(duration: 0.3)) { pull = .zero }
+                            return
                         }
-                        if mode == .pulling { pull = t }
+                        pull = CGSize(width: t.width, height: t.height > 0 ? t.height * 0.4 : t.height)
                     }
                     .onEnded { value in
-                        if mode == .pulling && value.translation.height < -threshold {
-                            store.trash(item)          // 留在拉上去的位置，从那里开始飞走
+                        guard !leaving, !draggingFile else { return }
+                        if value.translation.height < -threshold {
+                            store.delete(item)                     // 从拉上去的位置开始飞走
                         } else {
-                            withAnimation(.spring(duration: 0.45, bounce: 0.45)) { pull = .zero }
+                            springBack()
                         }
-                        mode = .none
                     }
             )
+            .allowsHitTesting(!leaving)
+            .onChange(of: pressing) { _, isPressing in
+                // 松手了（或拖动被打断）：没在飞走的话就弹回去
+                if !isPressing {
+                    draggingFile = false
+                    if !store.leaving.contains(item.id) && pull != .zero { springBack() }
+                }
+            }
+            .onChange(of: leaving, initial: true) { _, isLeaving in
+                if isLeaving && flight == 0 {
+                    withAnimation(.linear(duration: LineStore.deleteDuration)) { flight = 1 }
+                }
+            }
+    }
+
+    private func springBack() {
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.55)) { pull = .zero }
     }
 }
 
@@ -139,15 +163,6 @@ struct FloatAway: ViewModifier, Animatable {
             .overlay {
                 if p > 0 { WindStreaks(progress: p).offset(y: -40) }
             }
-    }
-}
-
-extension AnyTransition {
-    static var floatAway: AnyTransition {
-        .asymmetric(
-            insertion: .opacity.combined(with: .scale(scale: 0.85, anchor: .top)),
-            removal: .modifier(active: FloatAway(progress: 1), identity: FloatAway(progress: 0))
-                .animation(.linear(duration: LineStore.deleteDuration)))
     }
 }
 
