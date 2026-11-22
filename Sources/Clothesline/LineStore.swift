@@ -145,7 +145,7 @@ final class LineStore: ObservableObject {
     }
 
     // 删除：先把文件移到废纸篓（还能拿回来），图片翻两圈、被风吹到远方，飞完了才从绳子上拿掉
-    nonisolated static let deleteDuration = 3.2
+    nonisolated static let deleteDuration = 2.6
     @Published private(set) var leaving: Set<String> = []     // 正在飞走的图片
 
     func delete(_ item: LineItem) {

@@ -135,7 +135,7 @@ struct PullUpToDelete: ViewModifier {
     }
 }
 
-// 删除动画：上下翻两圈，然后被风带着，从大变小飞向远方
+// 删除动画：上下翻两圈，然后被风轻轻带走，越飘越小（动作都收得比较小，不刺眼）
 struct FloatAway: ViewModifier, Animatable {
     var progress: Double     // 0 = 好好挂着，1 = 已经飞走
 
@@ -146,22 +146,24 @@ struct FloatAway: ViewModifier, Animatable {
 
     func body(content: Content) -> some View {
         let p = progress
-        // 前 30%：上下翻两圈（慢-快-慢），顺便往上飘一点
-        let a = min(p / 0.3, 1)
+        // 前 45%：上下翻两圈（慢-快-慢），一边翻一边缩小，几乎不带透视，不会突然变大。
+        // 翻完两圈后再多倒下去 78°，图片就平躺着，像一张纸被风托着
+        let a = min(p / 0.45, 1)
         let flip = a * a * (3 - 2 * a)
-        // 后 70%：先被风托起来变大一点，然后越飞越远、越来越小
-        let b = max(0, (p - 0.3) / 0.7)
-        let scale = b < 0.15 ? 1 + b : max(0.03, 1.15 * pow(1 - (b - 0.15) / 0.85, 1.5))
-        let x = 170 * pow(b, 1.2) + sin(b * 3 * .pi) * 22
-        let y = -16 * flip - 190 * pow(b, 1.1)
+        // 后 55%：平躺着被风轻轻带走，往右上方飘，越来越小、越来越淡，飘的时候微微起伏
+        let b = max(0, (p - 0.45) / 0.55)
+        let scale = (1 - 0.45 * flip) * (1 - 0.92 * pow(b, 0.9))
+        let x = 90 * pow(b, 1.3) + sin(b * 2 * .pi) * 8
+        let y = -10 * flip - 110 * b
+        let tilt = (720 + 78) * flip + sin(b * 3 * .pi) * 6
         content
-            .rotation3DEffect(.degrees(720 * flip), axis: (x: 1, y: 0, z: 0), perspective: 0.6)
-            .rotationEffect(.degrees(sin(b * 2.5 * .pi) * 14))
+            .rotation3DEffect(.degrees(tilt), axis: (x: 1, y: 0, z: 0), perspective: 0.15)
+            .rotationEffect(.degrees(sin(b * 2 * .pi) * 6))
             .scaleEffect(scale)
             .offset(x: x, y: y)
-            .opacity(b < 0.75 ? 1 : 1 - (b - 0.75) / 0.25)
+            .opacity(b < 0.65 ? 1 : 1 - (b - 0.65) / 0.35)
             .overlay {
-                if p > 0 { WindStreaks(progress: p).offset(y: -40) }
+                if p > 0 { WindStreaks(progress: p).offset(y: -30) }
             }
     }
 }
@@ -172,11 +174,9 @@ struct WindStreaks: View {
 
     // 每道风线：高度、起点、终点（都按画布比例）、尾巴卷多大、什么时候开始、多粗
     private static let streaks: [(y: Double, from: Double, to: Double, curl: Double, delay: Double, width: Double)] = [
-        (0.55, 0.00, 0.72, 14, 0.18, 3.0),
-        (0.35, 0.10, 0.82, 10, 0.26, 2.4),
-        (0.74, 0.05, 0.68, 0, 0.32, 2.0),
-        (0.20, 0.22, 0.88, 8, 0.40, 1.8),
-        (0.62, 0.30, 0.95, 11, 0.46, 2.2),
+        (0.55, 0.05, 0.70, 9, 0.30, 1.4),
+        (0.30, 0.15, 0.80, 7, 0.40, 1.2),
+        (0.75, 0.10, 0.65, 0, 0.48, 1.0),
     ]
 
     var body: some View {
@@ -185,12 +185,12 @@ struct WindStreaks: View {
                 let life = (progress - streak.delay) / 0.45          // 每道风线刮 45% 的时间
                 guard life > 0, life < 1 else { continue }
                 let path = Self.path(streak, in: size).trimmedPath(from: max(0, life - 0.4), to: life)
-                context.stroke(path, with: .color(.white.opacity(0.9 * sin(life * .pi))),
+                context.stroke(path, with: .color(.white.opacity(0.45 * sin(life * .pi))),
                                style: StrokeStyle(lineWidth: streak.width, lineCap: .round))
             }
         }
-        .frame(width: 340, height: 240)
-        .shadow(color: .black.opacity(0.35), radius: 1.5)   // 浅色背景上也看得见
+        .frame(width: 260, height: 170)
+        .shadow(color: .black.opacity(0.15), radius: 1)     // 淡淡的，浅色背景上也能隐约看到
         .allowsHitTesting(false)
     }
 
