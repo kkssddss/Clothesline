@@ -1,4 +1,4 @@
-# 重新生成《本地制作指南.md》和一键安装脚本 install.sh（改了代码以后运行：python3 make-guide.py .）
+# Regenerates BUILD-GUIDE.md and the one-step installer install.sh. Run after changing code: python3 make-guide.py .
 import sys, os
 root = sys.argv[1]
 files = [
@@ -48,74 +48,77 @@ with open(os.path.join(root, "install.sh"), "w", encoding="utf-8") as f:
     f.write(script)
 os.chmod(os.path.join(root, "install.sh"), 0o755)
 
-# ---------- 本地制作指南.md ----------
-head = """# 晾衣绳（Clothesline）本地制作指南
+# ---------- BUILD-GUIDE.md ----------
+head = """# Clothesline: Build It Yourself
 
-这份文件里有做出"晾衣绳"需要的**全部源码和步骤**。把它拷到另一台 Mac 上，照着做就能在本机编译出一模一样的 App，不用从 GitHub 下载代码。
+This file has **all the source code and every step** you need to make Clothesline. Copy it to another Mac, follow the steps, and you'll build the exact same app on that Mac. You don't need to download any code from GitHub.
 
-## 它能做什么
+## What it does
 
-- 屏幕顶上一根自然下垂的晾衣绳，挂着**最新的 20 张截图和录屏**，最新的在最左边。
-- **存成文件的截图**：从截图文件夹里读，默认是桌面。
-- **只复制到剪贴板、没存的截图**（比如按 ⌃⇧⌘4，或用微信截图）：会自动存一份到"图片/晾衣绳"，然后也挂上去。
-- **点一下**图片就打开。**往上拉、松手**就删除：文件移到废纸篓，图片翻两圈后被风吹走。**往下拖**能把文件拖进微信、Word 等软件。右键有"打开""在访达中显示""删除"。
-- 绳子上有两只羊、一只猪、一头牛、一只公鸡来回走，偶尔停下来吃东西。它们点不了。
-- 菜单栏上有个 🧺：**点一下**显示或隐藏晾衣绳；**长按**（或右键）出菜单，里面有"开机时自动打开"和"退出"。
+- A naturally sagging clothesline across the top of the screen holds your **20 latest screenshots and screen recordings**, newest on the left.
+- **Screenshots saved as files** are read from your screenshot folder (the Desktop by default).
+- **Screenshots copied only to the clipboard and never saved** (for example with ⌃⇧⌘4, or from WeChat's screenshot tool) are saved automatically to "Pictures/晾衣绳" and hung on the line too.
+- **Click** a picture to open it. **Pull it up and let go** to delete it: the file moves to the Trash, and the picture flips twice and blows away in the wind. **Drag it down** to drop the file into WeChat, Word, or any other app. Right-click for Open (打开), Show in Finder (在访达中显示), and Delete (删除).
+- Two sheep, a pig, a cow, and a rooster walk back and forth on the rope and stop to graze now and then. You can't click them.
+- A 🧺 sits in the menu bar. **Click** it to show or hide the clothesline. **Long-press** (or right-click) it for a menu with Open at login (开机时自动打开) and Quit (退出).
+- The app's menus and labels are in Chinese.
 
-## 需要什么
+## What you need
 
-- 一台 Mac，系统是 **macOS 14 或更新**的版本。Apple 芯片和 Intel 芯片都可以，在哪台电脑上编译，就会编出适合那台电脑的版本。
-- **Xcode 命令行工具**。在"终端"里运行 `xcode-select -p`：能显示一个路径，就说明已经装好了；没装的话运行 `xcode-select --install`。装这个工具要联网，可能还要管理员权限。
-- 除此之外**不需要联网**，也不用任何第三方库。
-- 如果是公司电脑，先确认公司允许运行自己编译的程序。
+- A Mac running **macOS 14 or later**. Apple silicon and Intel both work: whichever Mac you build on, you get a version made for that Mac.
+- **Xcode Command Line Tools**. In Terminal, run `xcode-select -p`. If it prints a path, they're already installed. If not, run `xcode-select --install`. Installing them needs an internet connection and may need an administrator password.
+- Apart from that, you need **no internet connection** and no third-party libraries.
+- On a work computer, first make sure your company allows running apps you build yourself.
 
-## 最省事的做法：一个文件、一条命令
+## The easy way: one file, one command
 
-1. 把仓库里的 **`install.sh`** 拿到那台 Mac 上（GitHub 网页上点下载，或者用 U 盘、邮件、微信"文件传输助手"发过去）。比如放在"下载"文件夹里。
-2. 打开"终端"，运行（如果文件不在"下载"里，把路径改成它实际的位置）：
+1. Get **`install.sh`** from the repo onto that Mac (download it from the GitHub page, or send it over by USB drive, email, or chat). For example, put it in your Downloads folder.
+2. Open Terminal and run this (if the file isn't in Downloads, change the path to where it actually is):
 
 ```bash
 bash ~/Downloads/install.sh
 ```
 
-它会把全部源码写到 `~/code/Clothesline`，然后编译、安装、自动打开。第一次大约 1 分钟。
+It writes all the source code to `~/code/Clothesline`, then builds, installs, and opens the app. The first time takes about 1 minute.
 
-如果中途报错，把终端里显示的错误整段复制给聊天机器人看，它一般能告诉你是哪一步出了问题。
+If something goes wrong, copy the whole error from Terminal and paste it into a chatbot. It can usually tell you which step failed.
 
-## 手动做法（不用 install.sh 的话）
+## The manual way (without install.sh)
 
-**1. 建文件夹**（在"终端"里运行）
+**1. Make the folder** (run this in Terminal)
 
 ```bash
 mkdir -p ~/code/Clothesline/Sources/Clothesline && cd ~/code/Clothesline
 ```
 
-**2. 按下面"源码"里的文件名，把每个文件建出来，内容原样复制进去**
+**2. Create each file named in "Source code" below, and paste its contents in exactly as shown**
 
-一共 8 个文件，路径都是相对 `~/code/Clothesline` 的：
+There are 8 files. Each path is relative to `~/code/Clothesline`:
 
 """
 for path, _ in files:
     head += f"- `{path}`\n"
 head += """
-**3. 编译、安装、打开**
+**3. Build, install, and open it**
 
 ```bash
 cd ~/code/Clothesline && chmod +x build-app.sh && ./build-app.sh
 ```
 
-第一次编译大约要 1 分钟。
+The first build takes about 1 minute.
 
-## 装好以后
+## After it's installed
 
-- App 会装到"应用程序"文件夹并自动打开；没有管理员权限的话，会装到自己的 `~/Applications`。
-- 如果弹窗问能不能访问"桌面"文件夹，点**允许**，不然找不到截图。
-- 如果系统提示"无法验证开发者"，就在"应用程序"里右键点 Clothesline，选**打开**。
-- **以后改了代码**：在 `~/code/Clothesline` 里再运行一次 `./build-app.sh` 就行，它会关掉旧的、装好新的、重新打开。
+- The app is installed in your Applications folder and opens by itself. Without administrator rights, it goes in your own `~/Applications` folder instead.
+- If a window asks whether the app can access your Desktop folder, click **Allow**. Otherwise it can't find your screenshots.
+- If macOS says it can't verify the developer, right-click Clothesline in Applications and choose **Open**.
+- **If you change the code later**, run `./build-app.sh` again in `~/code/Clothesline`. It quits the old version, installs the new one, and opens it again.
 
 ---
 
-## 源码
+## Source code
+
+The code comments and the app's menus are in Chinese. Copy everything exactly as it is.
 
 """
 body = ""
@@ -123,6 +126,6 @@ for path, lang in files:
     code = sources[path]
     assert "```" not in code, path
     body += f"### `{path}`\n\n```{lang}\n{code}\n```\n\n"
-with open(os.path.join(root, "本地制作指南.md"), "w", encoding="utf-8") as f:
+with open(os.path.join(root, "BUILD-GUIDE.md"), "w", encoding="utf-8") as f:
     f.write(head + body.rstrip("\n") + "\n")
 print("written guide", len((head + body).splitlines()), "lines; install.sh", len(script.splitlines()), "lines")
