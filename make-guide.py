@@ -16,22 +16,22 @@ for path, _ in files:
     with open(os.path.join(root, path), encoding="utf-8") as f:
         sources[path] = f.read().rstrip("\n")
 
-# ---------- 一键安装脚本 install.sh ----------
+# ---------- One-step installer install.sh ----------
 END = "CLOTHESLINE_FILE_END"
 script = """#!/bin/bash
-# 一键做出“晾衣绳”：把全部源码写到 ~/code/Clothesline，然后编译、安装、打开。
-# 用法（在“终端”里）：bash install.sh
-# 想放到别的文件夹：bash install.sh 文件夹路径
+# Makes Clothesline in one step: writes all the source code to ~/code/Clothesline, then builds, installs and opens it.
+# Usage (in Terminal): bash install.sh
+# To use another folder: bash install.sh /path/to/folder
 set -euo pipefail
 
 if ! xcode-select -p >/dev/null 2>&1; then
-    echo "还没装 Xcode 命令行工具。请先在终端运行：xcode-select --install"
-    echo "装好以后再运行一次：bash install.sh"
+    echo "Xcode Command Line Tools aren't installed. First run this in Terminal: xcode-select --install"
+    echo "When they're installed, run bash install.sh again."
     exit 1
 fi
 
 DIR="${1:-$HOME/code/Clothesline}"
-echo "把源码写到 $DIR ……"
+echo "Writing the source code to $DIR..."
 mkdir -p "$DIR/Sources/Clothesline"
 cd "$DIR"
 
@@ -41,7 +41,7 @@ for path, _ in files:
     assert END not in code, path
     script += f"cat > '{path}' <<'{END}'\n{code}\n{END}\n\n"
 script += """chmod +x build-app.sh
-echo "开始编译（第一次大约 1 分钟）……"
+echo "Building (about 1 minute the first time)..."
 ./build-app.sh
 """
 with open(os.path.join(root, "install.sh"), "w", encoding="utf-8") as f:
@@ -57,11 +57,10 @@ This file has **all the source code and every step** you need to make Clotheslin
 
 - A naturally sagging clothesline across the top of the screen holds your **20 latest screenshots and screen recordings**, newest on the left.
 - **Screenshots saved as files** are read from your screenshot folder (the Desktop by default).
-- **Screenshots copied only to the clipboard and never saved** (for example with ⌃⇧⌘4, or from WeChat's screenshot tool) are saved automatically to "Pictures/晾衣绳" and hung on the line too.
-- **Click** a picture to open it. **Pull it up and let go** to delete it: the file moves to the Trash, and the picture flips twice and blows away in the wind. **Drag it down** to drop the file into WeChat, Word, or any other app. Right-click for Open (打开), Show in Finder (在访达中显示), and Delete (删除).
+- **Screenshots copied only to the clipboard and never saved** (for example with ⌃⇧⌘4, or from WeChat's screenshot tool) are saved automatically to a "Clothesline" folder in Pictures and hung on the line too.
+- **Click** a picture to open it. **Pull it up and let go** to delete it: the file moves to the Trash, and the picture flips twice and blows away in the wind. **Drag it down** to drop the file into WeChat, Word, or any other app. Right-click for Open, Show in Finder, and Move to Trash.
 - Two sheep, a pig, a cow, and a rooster walk back and forth on the rope and stop to graze now and then. You can't click them.
-- A 🧺 sits in the menu bar. **Click** it to show or hide the clothesline. **Long-press** (or right-click) it for a menu with Open at login (开机时自动打开) and Quit (退出).
-- The app's menus and labels are in Chinese.
+- A 🧺 sits in the menu bar. **Click** it to show or hide the clothesline. **Long-press** (or right-click) it for a menu with Open at Login and Quit.
 
 ## What you need
 
@@ -118,7 +117,7 @@ The first build takes about 1 minute.
 
 ## Source code
 
-The code comments and the app's menus are in Chinese. Copy everything exactly as it is.
+Copy everything exactly as it is.
 
 """
 body = ""

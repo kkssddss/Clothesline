@@ -1,6 +1,6 @@
 #!/bin/bash
-# 把程序打包成 Clothesline.app，装进“应用程序”文件夹，然后重新打开它
-# 用法：在项目文件夹里运行  ./build-app.sh
+# Packages the program as Clothesline.app, installs it in Applications, and reopens it
+# Usage: run ./build-app.sh in the project folder
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -33,15 +33,15 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>LSUIElement</key>
     <true/>
     <key>NSDesktopFolderUsageDescription</key>
-    <string>读取桌面上的截图和录屏，挂到晾衣绳上。</string>
+    <string>Reads the screenshots and screen recordings on your Desktop to hang them on the clothesline.</string>
 </dict>
 </plist>
 PLIST
 
 codesign --force --sign - "$APP"
 
-# 关掉正在运行的旧版本，装进“应用程序”，再打开。
-# 没有管理员权限、写不进 /Applications 的话，就装到自己的 ~/Applications 里
+# Quit the old version if it's running, install into Applications, and open it again.
+# Without permission to write to /Applications, install into your own ~/Applications instead
 DEST="/Applications"
 if [ ! -w "$DEST" ]; then
     DEST="$HOME/Applications"
@@ -51,4 +51,4 @@ pkill -x Clothesline 2>/dev/null || true
 rm -rf "$DEST/Clothesline.app"
 cp -R "$APP" "$DEST/"
 open "$DEST/Clothesline.app"
-echo "做好了，已经装到 $DEST/Clothesline.app 并打开"
+echo "Done. Installed $DEST/Clothesline.app and opened it."

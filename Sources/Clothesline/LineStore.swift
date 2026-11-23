@@ -2,24 +2,24 @@ import AppKit
 import SwiftUI
 import QuickLookThumbnailing
 
-// 绳子上挂的一张截图或一段录屏
+// One screenshot or screen recording on the line
 struct LineItem: Identifiable {
     let url: URL
     let date: Date
     let preview: NSImage?
-    let fromClipboard: Bool     // 原来只在剪贴板里、没存成文件的截图
+    let fromClipboard: Bool     // a screenshot that was only on the clipboard, never saved as a file
 
     var id: String { url.path }
     var isVideo: Bool { ["mov", "mp4"].contains(url.pathExtension.lowercased()) }
 
-    // 今天的显示时间，更早的显示日期
+    // Today's items show the time, older ones the date, always in English (e.g. "14:05", "Nov 22")
     var title: String {
         Calendar.current.isDateInToday(date)
-            ? date.formatted(date: .omitted, time: .shortened)
-            : date.formatted(.dateTime.month().day())
+            ? date.formatted(.dateTime.hour().minute().locale(Locale(identifier: "en_GB")))
+            : date.formatted(.dateTime.month(.abbreviated).day().locale(Locale(identifier: "en_US")))
     }
 
-    // 由 id 算出来的固定数字，用来让每张图晃的幅度、快慢都不一样
+    // A fixed number from the id, so each picture sways by a different amount and speed
     var seed: Int { id.unicodeScalars.reduce(0) { $0 &+ Int($1.value) } }
 }
 
@@ -28,27 +28,27 @@ final class LineStore: ObservableObject {
     @Published var items: [LineItem] = []
 
     static let maxItems = 20
-    private var thumbs: [URL: NSImage] = [:]                         // 缩略图（算过就存起来）
+    private var thumbs: [URL: NSImage] = [:]                         // thumbnails, cached once made
     private var lastClipboardChange = NSPasteboard.general.changeCount
 
-    // 只在剪贴板里的截图，帮你存一份到这里（“图片”文件夹里的“晾衣绳”）
+    // Clipboard-only screenshots are saved here (a Clothesline folder in Pictures)
     let clipboardFolder = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Pictures/晾衣绳", isDirectory: true)
+        .appendingPathComponent("Pictures/Clothesline", isDirectory: true)
 
     func start() {
         Task {
             while true {
                 saveClipboardScreenshot()
                 await refresh()
-                try? await Task.sleep(for: .seconds(1))   // 每秒看一次
+                try? await Task.sleep(for: .seconds(1))   // check once a second
             }
         }
     }
 
     func refresh() async {
-        // 有图片正在飞走时先不刷新，免得动画飞到一半被打断
+        // Don't refresh while a picture is flying away, so the animation isn't cut off
         guard leaving.isEmpty else { return }
-        // 存成文件的截图/录屏 + 从剪贴板帮你存下来的截图，合在一起按时间排，取最新 20 个
+        // Saved screenshots/recordings plus saved clipboard screenshots, sorted by time, newest 20
         var found: [URL: Date] = [:]
         for (url, date) in files(in: screenshotFolder(), onlyScreenshots: true) { found[url] = date }
         for (url, date) in files(in: clipboardFolder, onlyScreenshots: false) { found[url] = date }
@@ -60,23 +60,23 @@ final class LineStore: ObservableObject {
                 url: url, date: date, preview: await thumbnail(for: url),
                 fromClipboard: url.deletingLastPathComponent().path == clipboardFolder.path))
         }
-        // 有变化才更新，免得界面一直重画（等缩略图的时候如果开始删东西了，这次也不更新）
+        // Update only when something changed, so the view doesn't keep redrawing (and skip this round if a delete started while thumbnails were loading)
         guard leaving.isEmpty else { return }
         if newItems.map(\.id) != items.map(\.id) || newItems.map({ $0.preview == nil }) != items.map({ $0.preview == nil }) {
             items = newItems
         }
     }
 
-    // MARK: 剪贴板里的截图
+    // MARK: Clipboard screenshots
 
-    // 截图只放进剪贴板时（比如 ⌃⇧⌘4，或微信截图），帮你存成文件，这样也能挂上去
+    // When a screenshot only goes to the clipboard (e.g. ⌃⇧⌘4 or WeChat's screenshot tool), save it as a file so it can hang on the line too
     private func saveClipboardScreenshot() {
         let pasteboard = NSPasteboard.general
         guard pasteboard.changeCount != lastClipboardChange else { return }
         lastClipboardChange = pasteboard.changeCount
 
-        // 只要“纯图片”：截图到剪贴板就是这样。
-        // 从网页、访达里复制的东西会带着网址、文件或文字，不算截图。
+        // Only plain images count: that's what a screenshot on the clipboard looks like.
+        // Things copied from web pages or Finder come with a URL, file or text, so they don't count.
         let types = Set(pasteboard.types ?? [])
         let notScreenshot: [NSPasteboard.PasteboardType] = [.fileURL, .URL, .html, .string, .rtf]
         guard types.contains(.png) || types.contains(.tiff),
@@ -84,7 +84,7 @@ final class LineStore: ObservableObject {
               let data = pngData(from: pasteboard) else { return }
 
         try? FileManager.default.createDirectory(at: clipboardFolder, withIntermediateDirectories: true)
-        let name = "剪贴板截屏 " + Self.nameFormatter.string(from: Date()) + ".png"
+        let name = "Clipboard Screenshot " + Self.nameFormatter.string(from: Date()) + ".png"
         try? data.write(to: clipboardFolder.appendingPathComponent(name))
     }
 
@@ -96,13 +96,14 @@ final class LineStore: ObservableObject {
 
     private static let nameFormatter: DateFormatter = {
         let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd HH.mm.ss"
         return formatter
     }()
 
-    // MARK: 存成文件的截图
+    // MARK: Saved screenshots
 
-    // 截图默认存在桌面；如果你在“截屏”App 里改过位置，就读那个位置
+    // Screenshots go to the Desktop by default; if you picked another location in the Screenshot app, use that
     private func screenshotFolder() -> URL {
         if let path = UserDefaults(suiteName: "com.apple.screencapture")?.string(forKey: "location") {
             return URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
@@ -111,20 +112,28 @@ final class LineStore: ObservableObject {
     }
 
     private func files(in folder: URL, onlyScreenshots: Bool) -> [(URL, Date)] {
-        let prefixes = ["截屏", "录屏", "屏幕快照", "屏幕录制", "Screenshot", "Screen Shot", "Screen Recording"]
         let types = ["png", "jpg", "jpeg", "heic", "mov", "mp4"]
         let all = (try? FileManager.default.contentsOfDirectory(
             at: folder, includingPropertiesForKeys: [.creationDateKey], options: .skipsHiddenFiles)) ?? []
 
         return all.compactMap { url in
             guard types.contains(url.pathExtension.lowercased()) else { return nil }
-            if onlyScreenshots, !prefixes.contains(where: { url.lastPathComponent.hasPrefix($0) }) { return nil }
+            if onlyScreenshots, !Self.isScreenCapture(url) { return nil }
             let date = (try? url.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
             return (url, date)
         }
     }
 
-    // 图片和视频都能用系统的 Quick Look 生成缩略图
+    // macOS marks every screenshot with a hidden tag, whatever language the Mac uses.
+    // Screen recordings may not have the tag, so also accept files whose names carry a date and time:
+    // that's how macOS names screenshots and recordings in every language ("Screenshot 2026-11-23 at 14.05.09").
+    private static func isScreenCapture(_ url: URL) -> Bool {
+        if getxattr(url.path, "com.apple.metadata:kMDItemIsScreenCapture", nil, 0, 0, 0) > 0 { return true }
+        let stamp = #"\d{4}-\d{2}-\d{2}.*\d{1,2}\.\d{2}\.\d{2}"#
+        return url.lastPathComponent.range(of: stamp, options: .regularExpression) != nil
+    }
+
+    // Quick Look makes thumbnails for both pictures and videos
     private func thumbnail(for url: URL) async -> NSImage? {
         if let cached = thumbs[url] { return cached }
         let request = QLThumbnailGenerator.Request(
@@ -134,7 +143,7 @@ final class LineStore: ObservableObject {
         return rep.nsImage
     }
 
-    // MARK: 点击和右键菜单
+    // MARK: Click and right-click menu
 
     func open(_ item: LineItem) {
         NSWorkspace.shared.open(item.url)
@@ -144,9 +153,10 @@ final class LineStore: ObservableObject {
         NSWorkspace.shared.activateFileViewerSelecting([item.url])
     }
 
-    // 删除：先把文件移到废纸篓（还能拿回来），图片翻两圈、被风吹到远方，飞完了才从绳子上拿掉
+    // Delete: move the file to the Trash (so it can be recovered), flip the picture twice and blow it away,
+    // and take it off the line only after it's gone
     nonisolated static let deleteDuration = 2.6
-    @Published private(set) var leaving: Set<String> = []     // 正在飞走的图片
+    @Published private(set) var leaving: Set<String> = []     // pictures currently flying away
 
     func delete(_ item: LineItem) {
         guard !leaving.contains(item.id) else { return }
@@ -160,12 +170,12 @@ final class LineStore: ObservableObject {
         }
     }
 
-    // MARK: 把文件拖到别的软件里（微信、Word……）
+    // MARK: Dragging files into other apps (WeChat, Word...)
 
-    weak var hostView: NSView?                 // 晾衣绳所在的那个视图，开始拖动要用
+    weak var hostView: NSView?                 // the view the clothesline lives in, needed to start a drag
     private let dragSource = FileDragSource()
 
-    // 开始成功返回 true
+    // returns true if the drag started
     func beginFileDrag(_ item: LineItem) -> Bool {
         guard let view = hostView, let event = NSApp.currentEvent,
               event.type == .leftMouseDragged else { return false }

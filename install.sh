@@ -1,17 +1,17 @@
 #!/bin/bash
-# 一键做出“晾衣绳”：把全部源码写到 ~/code/Clothesline，然后编译、安装、打开。
-# 用法（在“终端”里）：bash install.sh
-# 想放到别的文件夹：bash install.sh 文件夹路径
+# Makes Clothesline in one step: writes all the source code to ~/code/Clothesline, then builds, installs and opens it.
+# Usage (in Terminal): bash install.sh
+# To use another folder: bash install.sh /path/to/folder
 set -euo pipefail
 
 if ! xcode-select -p >/dev/null 2>&1; then
-    echo "还没装 Xcode 命令行工具。请先在终端运行：xcode-select --install"
-    echo "装好以后再运行一次：bash install.sh"
+    echo "Xcode Command Line Tools aren't installed. First run this in Terminal: xcode-select --install"
+    echo "When they're installed, run bash install.sh again."
     exit 1
 fi
 
 DIR="${1:-$HOME/code/Clothesline}"
-echo "把源码写到 $DIR ……"
+echo "Writing the source code to $DIR..."
 mkdir -p "$DIR/Sources/Clothesline"
 cd "$DIR"
 
@@ -40,7 +40,7 @@ struct ClotheslineApp {
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
-        app.setActivationPolicy(.accessory)   // 不在 Dock 里出现图标
+        app.setActivationPolicy(.accessory)   // no Dock icon
         app.run()
     }
 }
@@ -51,7 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let store = LineStore()
     private let menu = NSMenu()
-    private let loginItem = NSMenuItem(title: "开机时自动打开", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
+    private let loginItem = NSMenuItem(title: "Open at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         makePanel()
@@ -59,31 +59,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         store.start()
     }
 
-    // 屏幕顶部一条透明的、永远浮在最上面的窗口，晾衣绳就画在里面。
-    // 窗口从屏幕最顶上开始（盖住菜单栏那一条），这样图片往上飞的时候能一直飞出屏幕。
+    // A transparent, always-on-top window along the top of the screen. The clothesline is drawn inside it.
+    // It starts at the very top of the screen (covering the menu bar) so pictures can fly all the way off the screen.
     private func makePanel() {
         guard let screen = NSScreen.main else { return }
-        let area = screen.visibleFrame                          // 去掉菜单栏和 Dock 之后的区域
+        let area = screen.visibleFrame                          // the screen minus the menu bar and Dock
         let menuBarHeight = screen.frame.maxY - area.maxY
         let height: CGFloat = menuBarHeight + 240
         panel = NSPanel(
             contentRect: NSRect(x: area.minX, y: screen.frame.maxY - height, width: area.width, height: height),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered, defer: false)
-        panel.level = .statusBar                // 比菜单栏还高一层，飞上去的图片不会被菜单栏挡住
+        panel.level = .statusBar                // above the menu bar, so flying pictures aren't hidden by it
         panel.isOpaque = false
-        panel.backgroundColor = .clear          // 透明：没挂东西的地方鼠标能点穿（菜单栏照常能点）
+        panel.backgroundColor = .clear          // transparent: clicks pass through empty areas (the menu bar still works)
         panel.hasShadow = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary]  // 每个桌面都有
+        panel.collectionBehavior = [.canJoinAllSpaces, .stationary]  // on every desktop
 
         let hosting = NSHostingView(rootView: ClotheslineView(store: store, topInset: menuBarHeight))
-        hosting.sizingOptions = []              // 别让 SwiftUI 改窗口大小
+        hosting.sizingOptions = []              // don't let SwiftUI resize the window
         panel.contentView = hosting
-        store.hostView = hosting                // 把文件拖到别的软件时要用
+        store.hostView = hosting                // needed to drag files into other apps
         panel.orderFrontRegardless()
     }
 
-    // 菜单栏上的 🧺：点一下显示/隐藏，长按（或右键）才出菜单
+    // The 🧺 in the menu bar: click to show/hide, long-press (or right-click) for the menu
     private func makeMenuBarButton() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         guard let button = statusItem.button else { return }
@@ -98,7 +98,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         loginItem.target = self
         menu.addItem(loginItem)
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "退出", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
 
     private func toggle() {
@@ -124,7 +124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-// 盖在 🧺 上面的一层透明视图，用来分辨“点一下”和“长按”
+// A transparent view over the 🧺 that tells a click from a long press
 final class PressView: NSView {
     var onClick: () -> Void = {}
     var onLongPress: () -> Void = {}
@@ -136,7 +136,7 @@ final class PressView: NSView {
     override func mouseDown(with event: NSEvent) {
         didLongPress = false
         (superview as? NSButton)?.highlight(true)
-        // 按住超过 0.45 秒就算长按
+        // holding longer than 0.45 s counts as a long press
         let timer = Timer(timeInterval: 0.45, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
@@ -167,24 +167,24 @@ import AppKit
 import SwiftUI
 import QuickLookThumbnailing
 
-// 绳子上挂的一张截图或一段录屏
+// One screenshot or screen recording on the line
 struct LineItem: Identifiable {
     let url: URL
     let date: Date
     let preview: NSImage?
-    let fromClipboard: Bool     // 原来只在剪贴板里、没存成文件的截图
+    let fromClipboard: Bool     // a screenshot that was only on the clipboard, never saved as a file
 
     var id: String { url.path }
     var isVideo: Bool { ["mov", "mp4"].contains(url.pathExtension.lowercased()) }
 
-    // 今天的显示时间，更早的显示日期
+    // Today's items show the time, older ones the date, always in English (e.g. "14:05", "Nov 22")
     var title: String {
         Calendar.current.isDateInToday(date)
-            ? date.formatted(date: .omitted, time: .shortened)
-            : date.formatted(.dateTime.month().day())
+            ? date.formatted(.dateTime.hour().minute().locale(Locale(identifier: "en_GB")))
+            : date.formatted(.dateTime.month(.abbreviated).day().locale(Locale(identifier: "en_US")))
     }
 
-    // 由 id 算出来的固定数字，用来让每张图晃的幅度、快慢都不一样
+    // A fixed number from the id, so each picture sways by a different amount and speed
     var seed: Int { id.unicodeScalars.reduce(0) { $0 &+ Int($1.value) } }
 }
 
@@ -193,27 +193,27 @@ final class LineStore: ObservableObject {
     @Published var items: [LineItem] = []
 
     static let maxItems = 20
-    private var thumbs: [URL: NSImage] = [:]                         // 缩略图（算过就存起来）
+    private var thumbs: [URL: NSImage] = [:]                         // thumbnails, cached once made
     private var lastClipboardChange = NSPasteboard.general.changeCount
 
-    // 只在剪贴板里的截图，帮你存一份到这里（“图片”文件夹里的“晾衣绳”）
+    // Clipboard-only screenshots are saved here (a Clothesline folder in Pictures)
     let clipboardFolder = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Pictures/晾衣绳", isDirectory: true)
+        .appendingPathComponent("Pictures/Clothesline", isDirectory: true)
 
     func start() {
         Task {
             while true {
                 saveClipboardScreenshot()
                 await refresh()
-                try? await Task.sleep(for: .seconds(1))   // 每秒看一次
+                try? await Task.sleep(for: .seconds(1))   // check once a second
             }
         }
     }
 
     func refresh() async {
-        // 有图片正在飞走时先不刷新，免得动画飞到一半被打断
+        // Don't refresh while a picture is flying away, so the animation isn't cut off
         guard leaving.isEmpty else { return }
-        // 存成文件的截图/录屏 + 从剪贴板帮你存下来的截图，合在一起按时间排，取最新 20 个
+        // Saved screenshots/recordings plus saved clipboard screenshots, sorted by time, newest 20
         var found: [URL: Date] = [:]
         for (url, date) in files(in: screenshotFolder(), onlyScreenshots: true) { found[url] = date }
         for (url, date) in files(in: clipboardFolder, onlyScreenshots: false) { found[url] = date }
@@ -225,23 +225,23 @@ final class LineStore: ObservableObject {
                 url: url, date: date, preview: await thumbnail(for: url),
                 fromClipboard: url.deletingLastPathComponent().path == clipboardFolder.path))
         }
-        // 有变化才更新，免得界面一直重画（等缩略图的时候如果开始删东西了，这次也不更新）
+        // Update only when something changed, so the view doesn't keep redrawing (and skip this round if a delete started while thumbnails were loading)
         guard leaving.isEmpty else { return }
         if newItems.map(\.id) != items.map(\.id) || newItems.map({ $0.preview == nil }) != items.map({ $0.preview == nil }) {
             items = newItems
         }
     }
 
-    // MARK: 剪贴板里的截图
+    // MARK: Clipboard screenshots
 
-    // 截图只放进剪贴板时（比如 ⌃⇧⌘4，或微信截图），帮你存成文件，这样也能挂上去
+    // When a screenshot only goes to the clipboard (e.g. ⌃⇧⌘4 or WeChat's screenshot tool), save it as a file so it can hang on the line too
     private func saveClipboardScreenshot() {
         let pasteboard = NSPasteboard.general
         guard pasteboard.changeCount != lastClipboardChange else { return }
         lastClipboardChange = pasteboard.changeCount
 
-        // 只要“纯图片”：截图到剪贴板就是这样。
-        // 从网页、访达里复制的东西会带着网址、文件或文字，不算截图。
+        // Only plain images count: that's what a screenshot on the clipboard looks like.
+        // Things copied from web pages or Finder come with a URL, file or text, so they don't count.
         let types = Set(pasteboard.types ?? [])
         let notScreenshot: [NSPasteboard.PasteboardType] = [.fileURL, .URL, .html, .string, .rtf]
         guard types.contains(.png) || types.contains(.tiff),
@@ -249,7 +249,7 @@ final class LineStore: ObservableObject {
               let data = pngData(from: pasteboard) else { return }
 
         try? FileManager.default.createDirectory(at: clipboardFolder, withIntermediateDirectories: true)
-        let name = "剪贴板截屏 " + Self.nameFormatter.string(from: Date()) + ".png"
+        let name = "Clipboard Screenshot " + Self.nameFormatter.string(from: Date()) + ".png"
         try? data.write(to: clipboardFolder.appendingPathComponent(name))
     }
 
@@ -261,13 +261,14 @@ final class LineStore: ObservableObject {
 
     private static let nameFormatter: DateFormatter = {
         let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd HH.mm.ss"
         return formatter
     }()
 
-    // MARK: 存成文件的截图
+    // MARK: Saved screenshots
 
-    // 截图默认存在桌面；如果你在“截屏”App 里改过位置，就读那个位置
+    // Screenshots go to the Desktop by default; if you picked another location in the Screenshot app, use that
     private func screenshotFolder() -> URL {
         if let path = UserDefaults(suiteName: "com.apple.screencapture")?.string(forKey: "location") {
             return URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
@@ -276,20 +277,28 @@ final class LineStore: ObservableObject {
     }
 
     private func files(in folder: URL, onlyScreenshots: Bool) -> [(URL, Date)] {
-        let prefixes = ["截屏", "录屏", "屏幕快照", "屏幕录制", "Screenshot", "Screen Shot", "Screen Recording"]
         let types = ["png", "jpg", "jpeg", "heic", "mov", "mp4"]
         let all = (try? FileManager.default.contentsOfDirectory(
             at: folder, includingPropertiesForKeys: [.creationDateKey], options: .skipsHiddenFiles)) ?? []
 
         return all.compactMap { url in
             guard types.contains(url.pathExtension.lowercased()) else { return nil }
-            if onlyScreenshots, !prefixes.contains(where: { url.lastPathComponent.hasPrefix($0) }) { return nil }
+            if onlyScreenshots, !Self.isScreenCapture(url) { return nil }
             let date = (try? url.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
             return (url, date)
         }
     }
 
-    // 图片和视频都能用系统的 Quick Look 生成缩略图
+    // macOS marks every screenshot with a hidden tag, whatever language the Mac uses.
+    // Screen recordings may not have the tag, so also accept files whose names carry a date and time:
+    // that's how macOS names screenshots and recordings in every language ("Screenshot 2026-11-23 at 14.05.09").
+    private static func isScreenCapture(_ url: URL) -> Bool {
+        if getxattr(url.path, "com.apple.metadata:kMDItemIsScreenCapture", nil, 0, 0, 0) > 0 { return true }
+        let stamp = #"\d{4}-\d{2}-\d{2}.*\d{1,2}\.\d{2}\.\d{2}"#
+        return url.lastPathComponent.range(of: stamp, options: .regularExpression) != nil
+    }
+
+    // Quick Look makes thumbnails for both pictures and videos
     private func thumbnail(for url: URL) async -> NSImage? {
         if let cached = thumbs[url] { return cached }
         let request = QLThumbnailGenerator.Request(
@@ -299,7 +308,7 @@ final class LineStore: ObservableObject {
         return rep.nsImage
     }
 
-    // MARK: 点击和右键菜单
+    // MARK: Click and right-click menu
 
     func open(_ item: LineItem) {
         NSWorkspace.shared.open(item.url)
@@ -309,9 +318,10 @@ final class LineStore: ObservableObject {
         NSWorkspace.shared.activateFileViewerSelecting([item.url])
     }
 
-    // 删除：先把文件移到废纸篓（还能拿回来），图片翻两圈、被风吹到远方，飞完了才从绳子上拿掉
+    // Delete: move the file to the Trash (so it can be recovered), flip the picture twice and blow it away,
+    // and take it off the line only after it's gone
     nonisolated static let deleteDuration = 2.6
-    @Published private(set) var leaving: Set<String> = []     // 正在飞走的图片
+    @Published private(set) var leaving: Set<String> = []     // pictures currently flying away
 
     func delete(_ item: LineItem) {
         guard !leaving.contains(item.id) else { return }
@@ -325,12 +335,12 @@ final class LineStore: ObservableObject {
         }
     }
 
-    // MARK: 把文件拖到别的软件里（微信、Word……）
+    // MARK: Dragging files into other apps (WeChat, Word...)
 
-    weak var hostView: NSView?                 // 晾衣绳所在的那个视图，开始拖动要用
+    weak var hostView: NSView?                 // the view the clothesline lives in, needed to start a drag
     private let dragSource = FileDragSource()
 
-    // 开始成功返回 true
+    // returns true if the drag started
     func beginFileDrag(_ item: LineItem) -> Bool {
         guard let view = hostView, let event = NSApp.currentEvent,
               event.type == .leftMouseDragged else { return false }
@@ -361,48 +371,48 @@ import UniformTypeIdentifiers
 
 struct ClotheslineView: View {
     @ObservedObject var store: LineStore
-    var topInset: CGFloat = 0          // 窗口最上面被菜单栏占掉的高度
+    var topInset: CGFloat = 0          // height taken by the menu bar at the top of the window
 
     var body: some View {
         GeometryReader { geo in
             let rope = Rope(width: geo.size.width, topY: topInset + 44)
 
             ZStack(alignment: .topLeading) {
-                // 挂着的截图和录屏，太多就左右滚动
+                // The hanging screenshots and recordings; scrolls sideways when there are too many
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: 22) {
                         ForEach(store.items) { item in
                             HangingCard(item: item)
                                 .onTapGesture { store.open(item) }
                                 .contextMenu {
-                                    Button("打开") { store.open(item) }
-                                    Button("在访达中显示") { store.revealInFinder(item) }
+                                    Button("Open") { store.open(item) }
+                                    Button("Show in Finder") { store.revealInFinder(item) }
                                     Divider()
-                                    Button("删除（移到废纸篓）", role: .destructive) { store.delete(item) }
+                                    Button("Move to Trash", role: .destructive) { store.delete(item) }
                                 }
                                 .modifier(PullUpToDelete(item: item, store: store,
                                                          leaving: store.leaving.contains(item.id)))
                                 .modifier(Sway(seed: item.seed))
-                                // 按自己在屏幕上的位置：先顺着那一段绳子的斜度转一下，再往下挪到绳子的高度，
-                                // 这样图片上沿正好贴着绳子
+                                // Using its position on screen: tilt to match that part of the rope, then move down to the rope's height,
+                                // so the picture's top edge sits right on the rope
                                 .visualEffect { content, proxy in
                                     let x = proxy.frame(in: .global).midX
                                     return content
                                         .rotationEffect(.radians(rope.angle(at: x)), anchor: .top)
                                         .offset(y: rope.y(at: x) - rope.topY)
                                 }
-                                // 新挂上来的淡入；飞走的那张动画放完已经看不见了，直接拿掉
+                                // New pictures fade in. A deleted one is already out of sight when its animation ends, so just remove it
                                 .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.85, anchor: .top)),
                                                         removal: .identity))
                         }
                     }
                     .padding(.horizontal, 60)
-                    .padding(.top, rope.topY - 2)          // 图片上沿就在绳子上（高 2 点，让绳子压着上沿）
+                    .padding(.top, rope.topY - 2)          // picture tops sit on the rope (2 pt higher, so the rope covers the top edge)
                     .padding(.bottom, rope.sag + 12)
                 }
-                .scrollClipDisabled()                      // 飞走的图片可以飞出滚动区域
+                .scrollClipDisabled()                      // flying pictures can leave the scroll area
 
-                // 绳子（画在图片前面）
+                // The rope (drawn in front of the pictures)
                 RopeShape(rope: rope)
                     .stroke(Color(red: 0.66, green: 0.52, blue: 0.38),
                             style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
@@ -413,7 +423,7 @@ struct ClotheslineView: View {
                     .shadow(color: .black.opacity(0.25), radius: 1, y: 1)
                     .allowsHitTesting(false)
 
-                // 小动物
+                // The animals
                 AnimalsView(rope: rope)
             }
         }
@@ -421,18 +431,18 @@ struct ClotheslineView: View {
     }
 }
 
-// 按住图片可以随便拖，它会跟着鼠标走：
-//   往上拉过 70 点再松手 → 删除（翻两圈、被风吹走）
-//   没拉够就松手 → 弹回绳子上
-//   往下拖 → 把文件拖到别的软件里（微信、Word……）
+// Hold a picture to drag it anywhere; it follows the mouse:
+//   pull it up more than 70 pt and let go → delete (flips twice, blows away)
+//   let go before that → springs back onto the rope
+//   drag it down → drop the file into another app (WeChat, Word...)
 struct PullUpToDelete: ViewModifier {
     let item: LineItem
     let store: LineStore
-    let leaving: Bool                           // 正在飞走
+    let leaving: Bool                           // flying away
     @State private var pull: CGSize = .zero
-    @State private var flight = 0.0             // 飞走动画走到哪了（0～1）
+    @State private var flight = 0.0             // fly-away animation progress (0 to 1)
     @State private var draggingFile = false
-    @GestureState private var pressing = false  // 手指还按着（拖动被打断时会自动变回 false）
+    @GestureState private var pressing = false  // still held down (turns false by itself if the drag is interrupted)
     private let threshold: CGFloat = 70
 
     func body(content: Content) -> some View {
@@ -440,7 +450,7 @@ struct PullUpToDelete: ViewModifier {
         content
             .overlay(alignment: .top) {
                 if ready {
-                    // 拉够了：出现一个小垃圾桶，提示松手就删
+                    // Pulled far enough: a small trash can shows that letting go deletes it
                     Image(systemName: "trash.fill")
                         .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(.white)
@@ -451,8 +461,8 @@ struct PullUpToDelete: ViewModifier {
                 }
             }
             .scaleEffect(ready ? 1.06 : 1)
-            .animation(.spring(duration: 0.2), value: ready)      // 只给垃圾桶和放大加动画，拖动本身不加
-            .offset(pull)                                          // 跟着鼠标走
+            .animation(.spring(duration: 0.2), value: ready)      // animate only the trash can and the zoom, not the drag itself
+            .offset(pull)                                          // follow the mouse
             .modifier(FloatAway(progress: flight))
             .gesture(
                 DragGesture(minimumDistance: 3, coordinateSpace: .global)
@@ -460,7 +470,7 @@ struct PullUpToDelete: ViewModifier {
                     .onChanged { value in
                         guard !leaving, !draggingFile else { return }
                         let t = value.translation
-                        // 明显往下拖：改成把文件拖出去
+                        // Clearly dragging down: drag the file out instead
                         if t.height > 28, t.height > abs(t.width), store.beginFileDrag(item) {
                             draggingFile = true
                             withAnimation(.spring(duration: 0.3)) { pull = .zero }
@@ -471,7 +481,7 @@ struct PullUpToDelete: ViewModifier {
                     .onEnded { value in
                         guard !leaving, !draggingFile else { return }
                         if value.translation.height < -threshold {
-                            store.delete(item)                     // 从拉上去的位置开始飞走
+                            store.delete(item)                     // fly away from where it was pulled to
                         } else {
                             springBack()
                         }
@@ -479,7 +489,7 @@ struct PullUpToDelete: ViewModifier {
             )
             .allowsHitTesting(!leaving)
             .onChange(of: pressing) { _, isPressing in
-                // 松手了（或拖动被打断）：没在飞走的话就弹回去
+                // Released (or the drag was interrupted): spring back unless it's flying away
                 if !isPressing {
                     draggingFile = false
                     if !store.leaving.contains(item.id) && pull != .zero { springBack() }
@@ -497,9 +507,9 @@ struct PullUpToDelete: ViewModifier {
     }
 }
 
-// 删除动画：上下翻两圈，然后被风轻轻带走，越飘越小（动作都收得比较小，不刺眼）
+// Delete animation: flips over twice, then a light wind carries it off, shrinking as it goes (kept small so it's easy on the eyes)
 struct FloatAway: ViewModifier, Animatable {
-    var progress: Double     // 0 = 好好挂着，1 = 已经飞走
+    var progress: Double     // 0 = hanging, 1 = gone
 
     nonisolated var animatableData: Double {
         get { progress }
@@ -508,11 +518,11 @@ struct FloatAway: ViewModifier, Animatable {
 
     func body(content: Content) -> some View {
         let p = progress
-        // 前 45%：上下翻两圈（慢-快-慢），一边翻一边缩小，几乎不带透视，不会突然变大。
-        // 翻完两圈后再多倒下去 78°，图片就平躺着，像一张纸被风托着
+        // First 45%: flip over twice (slow-fast-slow), shrinking while flipping, with almost no perspective so it never suddenly grows.
+        // After the two flips it tips another 78° and lies flat, like a sheet of paper carried by the wind
         let a = min(p / 0.45, 1)
         let flip = a * a * (3 - 2 * a)
-        // 后 55%：平躺着被风轻轻带走，往右上方飘，越来越小、越来越淡，飘的时候微微起伏
+        // Last 55%: lying flat, it drifts up and to the right, smaller and fainter, bobbing slightly
         let b = max(0, (p - 0.45) / 0.55)
         let scale = (1 - 0.45 * flip) * (1 - 0.92 * pow(b, 0.9))
         let x = 90 * pow(b, 1.3) + sin(b * 2 * .pi) * 8
@@ -530,11 +540,11 @@ struct FloatAway: ViewModifier, Animatable {
     }
 }
 
-// 风：几道白色的风线从左往右刮过去，末尾卷个小圈
+// Wind: a few white streaks sweep from left to right, each curling at the end
 struct WindStreaks: View {
     let progress: Double
 
-    // 每道风线：高度、起点、终点（都按画布比例）、尾巴卷多大、什么时候开始、多粗
+    // Each streak: height, start, end (as fractions of the canvas), curl size, start time, line width
     private static let streaks: [(y: Double, from: Double, to: Double, curl: Double, delay: Double, width: Double)] = [
         (0.55, 0.05, 0.70, 9, 0.30, 1.4),
         (0.30, 0.15, 0.80, 7, 0.40, 1.2),
@@ -544,7 +554,7 @@ struct WindStreaks: View {
     var body: some View {
         Canvas { context, size in
             for streak in Self.streaks {
-                let life = (progress - streak.delay) / 0.45          // 每道风线刮 45% 的时间
+                let life = (progress - streak.delay) / 0.45          // each streak lasts 45% of the animation
                 guard life > 0, life < 1 else { continue }
                 let path = Self.path(streak, in: size).trimmedPath(from: max(0, life - 0.4), to: life)
                 context.stroke(path, with: .color(.white.opacity(0.45 * sin(life * .pi))),
@@ -552,7 +562,7 @@ struct WindStreaks: View {
             }
         }
         .frame(width: 260, height: 170)
-        .shadow(color: .black.opacity(0.15), radius: 1)     // 淡淡的，浅色背景上也能隐约看到
+        .shadow(color: .black.opacity(0.15), radius: 1)     // faint, but still visible on light backgrounds
         .allowsHitTesting(false)
     }
 
@@ -562,11 +572,11 @@ struct WindStreaks: View {
         let x0 = s.from * size.width, x1 = s.to * size.width
         var path = Path()
         path.move(to: CGPoint(x: x0, y: y))
-        // 波浪形往右刮
+        // wavy line to the right
         path.addCurve(to: CGPoint(x: x1, y: y - 12),
                       control1: CGPoint(x: x0 + (x1 - x0) * 0.35, y: y - 16),
                       control2: CGPoint(x: x0 + (x1 - x0) * 0.65, y: y + 10))
-        // 末尾卷一个小圈
+        // small curl at the end
         if s.curl > 0 {
             path.addArc(center: CGPoint(x: x1, y: y - 12 - s.curl), radius: s.curl,
                         startAngle: .degrees(90), endAngle: .degrees(-200), clockwise: true)
@@ -575,7 +585,7 @@ struct WindStreaks: View {
     }
 }
 
-// 轻轻地来回晃，每张的幅度和快慢都不一样
+// Gentle swaying; each picture swings by a different amount and speed
 struct Sway: ViewModifier {
     let seed: Int
     @State private var swinging = false
@@ -603,7 +613,7 @@ struct HangingCard: View {
             Text(item.title)
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(.white)
-                .shadow(color: .black.opacity(0.8), radius: 1.5, y: 0.5)   // 背景透明，加阴影才看得清
+                .shadow(color: .black.opacity(0.8), radius: 1.5, y: 0.5)   // a shadow keeps it readable on the transparent background
                 .lineLimit(1)
                 .frame(maxWidth: 140)
         }
@@ -615,11 +625,11 @@ struct HangingCard: View {
         return CGSize(width: size.width * scale, height: size.height * scale)
     }
 
-    // 没有外框，只有图片本身
+    // No frame, just the picture itself
     @ViewBuilder
     private var picture: some View {
         if let preview = item.preview {
-            // 按图片自己的比例算出大小（最大 140×88），框和图片一样大，图片上沿才会正好在顶上
+            // Sized from the picture's own aspect ratio (max 140×88) so the frame matches the picture and its top edge is at the top
             let size = fitted(preview.size, maxWidth: 140, maxHeight: 88)
             Image(nsImage: preview)
                 .resizable()
@@ -632,7 +642,7 @@ struct HangingCard: View {
                             .foregroundStyle(.white, .black.opacity(0.4))
                     }
                 }
-                // 原来只在剪贴板里的截图，右下角放个小标记
+                // Screenshots that were only on the clipboard get a small badge in the bottom-right corner
                 .overlay(alignment: .bottomTrailing) {
                     if item.fromClipboard {
                         Image(systemName: "doc.on.clipboard.fill")
@@ -658,20 +668,20 @@ CLOTHESLINE_FILE_END
 cat > 'Sources/Clothesline/Rope.swift' <<'CLOTHESLINE_FILE_END'
 import SwiftUI
 
-// 晾衣绳的形状：两头高、中间往下垂
+// The rope's shape: high at both ends, sagging in the middle
 struct Rope: Sendable {
     var width: CGFloat
-    var topY: CGFloat = 44      // 两头的高度（上面留点地方给小动物跳）
-    var sag: CGFloat = 38       // 中间往下垂多少
+    var topY: CGFloat = 44      // height of the ends (leaves room above for the animals)
+    var sag: CGFloat = 38       // how far the middle sags
 
-    // 绳子在 x 这个位置的高度
+    // rope height at x
     func y(at x: CGFloat) -> CGFloat {
         guard width > 0 else { return topY }
-        let u = (x - width / 2) / (width / 2)          // 最左 -1，中间 0，最右 1
+        let u = (x - width / 2) / (width / 2)          // -1 at the left end, 0 in the middle, 1 at the right end
         return topY + sag * (1 - u * u)
     }
 
-    // 绳子在 x 这个位置的倾斜角度（小动物站上去要跟着斜）
+    // rope angle at x (animals standing there tilt to match)
     func angle(at x: CGFloat) -> CGFloat {
         guard width > 0 else { return 0 }
         let half = width / 2
@@ -685,7 +695,7 @@ struct RopeShape: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
         path.move(to: CGPoint(x: 0, y: rope.topY))
-        // 控制点放在 2 倍下垂的位置，画出来正好是上面 y(at:) 那条曲线
+        // A control point at twice the sag draws exactly the y(at:) curve above
         path.addQuadCurve(to: CGPoint(x: rect.width, y: rope.topY),
                           control: CGPoint(x: rect.width / 2, y: rope.topY + rope.sag * 2))
         return path
@@ -697,21 +707,22 @@ cat > 'Sources/Clothesline/Animals.swift' <<'CLOTHESLINE_FILE_END'
 import SwiftUI
 import Observation
 
-// 在绳子上走来走去的小动物。
-// 画法照着“脚本狗”里那只羊：纯代码画的圆和椭圆，逻辑尺寸 24×18、朝右；
-// 走路只有两帧，四条腿一开一合，迈步那一帧整只往上提一点；偶尔停下来低头吃东西。
+// Little animals walking back and forth on the rope.
+// Drawn entirely in code with circles and ovals, on a 24×18 grid, facing right.
+// Walking has two frames: the legs close and open, and the body lifts a little on the open frame.
+// Now and then an animal stops to graze.
 
 enum AnimalKind {
     case sheep, pig, cow, rooster
 }
 
 enum Pose {
-    case walk0     // 腿并拢
-    case walk1     // 腿分开（这一帧身子提起来一点）
-    case nibble    // 停下来低头吃
+    case walk0     // legs together
+    case walk1     // legs apart (the body lifts a little)
+    case nibble    // stopped, head down, grazing
 }
 
-// MARK: - 一群小动物（每 70 毫秒走一步）
+// MARK: - The herd (moves every 70 ms)
 
 @MainActor
 @Observable
@@ -719,21 +730,21 @@ final class Herd {
     struct Member: Identifiable {
         let id: Int
         let kind: AnimalKind
-        let scale: Double          // 1 个逻辑点 = 多少屏幕点（小羊羔就小一点）
+        let scale: Double          // screen points per grid unit (the lamb is smaller)
         var x: Double
-        var facing: Double         // 1 朝右，-1 朝左
-        var nibble = 0             // 还要吃多少拍
-        var step = 0               // 走了多少步
+        var facing: Double         // 1 = facing right, -1 = facing left
+        var nibble = 0             // ticks of grazing left
+        var step = 0               // steps walked
 
         var pose: Pose { nibble > 0 ? .nibble : (step % 2 == 1 ? .walk1 : .walk0) }
         var bob: Double { pose == .walk1 ? -1 : 0 }
     }
 
-    static let tick = 0.07                 // 一拍 70 毫秒
-    static let stepTicks = 3               // 每 3 拍换一次腿
-    static let speed = 16.0                // 每秒走 16 个逻辑点
-    static let nibbleChance = 0.004        // 走路时每拍有 0.4% 的机会停下来吃
-    static let nibbleTicks = 18...36       // 吃 1.3～2.5 秒
+    static let tick = 0.07                 // one tick = 70 ms
+    static let stepTicks = 3               // switch legs every 3 ticks
+    static let speed = 16.0                // grid units walked per second
+    static let nibbleChance = 0.004        // 0.4% chance per tick of stopping to graze
+    static let nibbleTicks = 18...36       // graze for 1.3 to 2.5 seconds
 
     var members: [Member] = []
     @ObservationIgnored var width: Double = 0
@@ -743,7 +754,7 @@ final class Herd {
     func start(width: Double) {
         self.width = width
         guard timer == nil else { return }
-        // 两只羊（一只是小羊羔）、一只猪、一头牛、一只大公鸡
+        // Two sheep (one is a lamb), a pig, a cow and a rooster
         let lineup: [(AnimalKind, Double)] = [(.sheep, 2.0), (.sheep, 1.5), (.pig, 2.0), (.cow, 2.1), (.rooster, 1.9)]
         members = lineup.shuffled().enumerated().map { index, animal in
             Member(id: index, kind: animal.0, scale: animal.1,
@@ -766,7 +777,7 @@ final class Herd {
             } else {
                 m.x += m.facing * Self.speed * m.scale * Self.tick
                 if m.x >= right || m.x <= left {
-                    // 走到头：转身，顺便吃一会
+                    // Reached the end: turn around and graze for a bit
                     m.x = min(max(m.x, left), right)
                     m.facing = -m.facing
                     m.nibble = Int.random(in: Self.nibbleTicks)
@@ -788,22 +799,22 @@ struct AnimalsView: View {
         ZStack(alignment: .topLeading) {
             ForEach(herd.members) { m in
                 let x = CGFloat(m.x)
-                let feet = (17.2 - 9) * m.scale        // 脚底离画布中心多远
+                let feet = (17.2 - 9) * m.scale        // distance from the canvas center to the feet
                 AnimalSprite(kind: m.kind, pose: m.pose, scale: m.scale)
-                    .scaleEffect(x: m.facing, y: 1)     // 画的时候朝右，往左走就镜像
+                    .scaleEffect(x: m.facing, y: 1)     // drawn facing right; mirrored when walking left
                     .rotationEffect(.radians(rope.angle(at: x)), anchor: UnitPoint(x: 0.5, y: 17.2 / 18))
                     .shadow(color: .black.opacity(0.3), radius: 1.2, y: 1)
                     .position(x: x, y: rope.y(at: x) - feet + 1 + m.bob)
-                    .animation(.linear(duration: Herd.tick), value: m.x)   // 两拍之间平滑地走
+                    .animation(.linear(duration: Herd.tick), value: m.x)   // glide smoothly between ticks
             }
         }
-        .allowsHitTesting(false)                        // 小动物点不了，点击会穿过去
+        .allowsHitTesting(false)                        // animals can't be clicked; clicks pass through
         .onAppear { herd.start(width: Double(rope.width)) }
         .onChange(of: rope.width) { _, width in herd.width = Double(width) }
     }
 }
 
-// MARK: - 画一只小动物
+// MARK: - Drawing one animal
 
 struct AnimalSprite: View {
     let kind: AnimalKind
@@ -818,7 +829,7 @@ struct AnimalSprite: View {
     }
 }
 
-// 所有坐标都是逻辑坐标（24×18，左上角是原点，朝右），画的时候乘以 u
+// All coordinates are grid units (24×18, origin at top left, facing right), multiplied by u when drawn
 struct AnimalPainter {
     let u: CGFloat
     let pose: Pose
@@ -826,7 +837,7 @@ struct AnimalPainter {
     static let wool = hex(0xfbfaf4), woolEdge = hex(0xa7aab2), face = hex(0x4b4f59)
     static let blush = hex(0xff9fb0), pupil = hex(0x111111)
 
-    // 腿往里并（1）、往外分（-1）、并齐吃东西（0）
+    // legs in (1), out (-1), or even while grazing (0)
     private var legShift: CGFloat {
         switch pose {
         case .walk0: return 1
@@ -845,107 +856,107 @@ struct AnimalPainter {
         }
     }
 
-    // MARK: 羊（和脚本狗那只一模一样）
+    // MARK: Sheep
 
     private func sheep(_ ctx: GraphicsContext) {
         fourLegs(ctx, color: Self.face, width: 1.7, top: 11.5)
         let puffs: [(CGFloat, CGFloat)] = [(6.5, 7.2), (9.8, 5.6), (13.4, 5.8), (16.0, 7.6), (15.2, 10.6),
                                            (11.0, 11.4), (7.0, 10.6), (4.6, 9.0), (10.8, 8.4)]
-        // 先用灰色把 9 个圆各放大一点画一遍，再用羊毛色盖上去 → 只剩外面一圈灰边
+        // Draw the 9 puffs slightly larger in gray, then cover them in wool color → only a gray outline is left
         for (cx, cy) in puffs { fill(ctx, oval(cx - 3.8, cy - 3.8, cx + 3.8, cy + 3.8), Self.woolEdge) }
         for (cx, cy) in puffs { fill(ctx, oval(cx - 3.3, cy - 3.3, cx + 3.3, cy + 3.3), Self.wool) }
         let headY: CGFloat = nibbling ? 9.4 : 5.4
-        fill(ctx, oval(17.4, headY, 23.2, headY + 5.6), Self.face)              // 头
-        fill(ctx, oval(17.0, headY + 0.4, 19.2, headY + 2.0), Self.face)        // 耳朵
+        fill(ctx, oval(17.4, headY, 23.2, headY + 5.6), Self.face)              // head
+        fill(ctx, oval(17.0, headY + 0.4, 19.2, headY + 2.0), Self.face)        // ear
         eye(ctx, 20.9, headY + 2.0)
-        fill(ctx, oval(21.0, headY + 3.6, 22.4, headY + 4.4), Self.blush)       // 腮红
+        fill(ctx, oval(21.0, headY + 3.6, 22.4, headY + 4.4), Self.blush)       // blush
     }
 
-    // MARK: 小猪
+    // MARK: Pig
 
     private func pig(_ ctx: GraphicsContext) {
         let pink = Self.hex(0xffc8d2), edge = Self.hex(0xe48ea3), leg = Self.hex(0xf4a9b8)
         let snout = Self.hex(0xf7a3b4), nostril = Self.hex(0xc0647a)
         fourLegs(ctx, color: leg, width: 1.9, top: 10.8)
-        ctx.stroke(oval(1.9, 6.0, 3.9, 8.0), with: .color(edge), lineWidth: 0.55 * u)  // 卷卷的小尾巴
+        ctx.stroke(oval(1.9, 6.0, 3.9, 8.0), with: .color(edge), lineWidth: 0.55 * u)  // curly tail
         fill(ctx, oval(3.0, 4.0, 18.0, 13.7), edge)
-        fill(ctx, oval(3.5, 4.5, 17.5, 13.2), pink)                              // 身体
+        fill(ctx, oval(3.5, 4.5, 17.5, 13.2), pink)                              // body
         let headY: CGFloat = nibbling ? 7.6 : 4.4
-        fill(ctx, triangle((16.4, headY + 1.4), (17.2, headY - 1.4), (18.6, headY + 0.8)), leg)  // 后面的耳朵
+        fill(ctx, triangle((16.4, headY + 1.4), (17.2, headY - 1.4), (18.6, headY + 0.8)), leg)  // back ear
         fill(ctx, oval(15.3, headY - 0.5, 22.7, headY + 6.5), edge)
-        fill(ctx, oval(15.8, headY, 22.2, headY + 6.0), pink)                    // 头
-        fill(ctx, triangle((17.8, headY + 1.0), (19.0, headY - 1.6), (20.2, headY + 0.8)), leg)  // 前面的耳朵
-        fill(ctx, oval(20.9, headY + 2.2, 23.8, headY + 4.6), snout)             // 鼻子
+        fill(ctx, oval(15.8, headY, 22.2, headY + 6.0), pink)                    // head
+        fill(ctx, triangle((17.8, headY + 1.0), (19.0, headY - 1.6), (20.2, headY + 0.8)), leg)  // front ear
+        fill(ctx, oval(20.9, headY + 2.2, 23.8, headY + 4.6), snout)             // snout
         fill(ctx, oval(21.6, headY + 3.0, 22.2, headY + 3.8), nostril)
         fill(ctx, oval(22.6, headY + 3.0, 23.2, headY + 3.8), nostril)
         eye(ctx, 19.4, headY + 2.0)
         fill(ctx, oval(17.8, headY + 3.8, 19.2, headY + 4.6), Self.blush)
     }
 
-    // MARK: 奶牛
+    // MARK: Cow
 
     private func cow(_ ctx: GraphicsContext) {
         let white = Self.wool, edge = Self.woolEdge, spot = Self.face
         let muzzle = Self.hex(0xffc9cf), nostril = Self.hex(0xc0647a), horn = Self.hex(0xf3e2b3)
         fourLegs(ctx, color: white, width: 1.8, top: 10.5, edge: edge, hoof: spot)
-        var tail = Path()                                                        // 尾巴
+        var tail = Path()                                                        // tail
         tail.move(to: pt(3.4, 6.2))
         tail.addQuadCurve(to: pt(2.2, 10.6), control: pt(1.8, 7.0))
         ctx.stroke(tail, with: .color(spot), style: StrokeStyle(lineWidth: 0.5 * u, lineCap: .round))
         fill(ctx, oval(1.5, 10.0, 2.9, 11.9), spot)
         fill(ctx, rounded(2.5, 4.1, 18.1, 13.1, 3.7), edge)
         let torso = rounded(3.0, 4.6, 17.6, 12.6, 3.2)
-        fill(ctx, torso, white)                                                  // 身体
-        var spots = ctx                                                          // 黑色花斑
+        fill(ctx, torso, white)                                                  // body
+        var spots = ctx                                                          // black spots
         spots.clip(to: torso)
         fill(spots, oval(4.8, 5.0, 9.4, 8.8), spot)
         fill(spots, oval(10.6, 8.6, 15.0, 13.0), spot)
         fill(spots, oval(14.2, 3.8, 17.8, 7.0), spot)
         let headY: CGFloat = nibbling ? 7.6 : 3.6
-        fill(ctx, oval(17.6, headY - 1.3, 18.8, headY + 0.6), horn)              // 小角
+        fill(ctx, oval(17.6, headY - 1.3, 18.8, headY + 0.6), horn)              // little horn
         fill(ctx, oval(20.4, headY - 1.3, 21.6, headY + 0.6), horn)
         fill(ctx, oval(15.4, headY + 0.6, 18.2, headY + 2.4), edge)
-        fill(ctx, oval(15.7, headY + 0.9, 17.9, headY + 2.1), white)             // 耳朵
+        fill(ctx, oval(15.7, headY + 0.9, 17.9, headY + 2.1), white)             // ear
         fill(ctx, oval(16.3, headY - 0.5, 22.9, headY + 6.3), edge)
         let head = oval(16.8, headY, 22.4, headY + 5.8)
-        fill(ctx, head, white)                                                   // 头
+        fill(ctx, head, white)                                                   // head
         var patch = ctx
         patch.clip(to: head)
-        fill(patch, oval(16.0, headY - 1.0, 20.2, headY + 2.8), spot)           // 眼睛那块黑斑
-        fill(ctx, oval(19.4, headY + 3.1, 23.8, headY + 6.2), muzzle)            // 粉色的嘴
+        fill(patch, oval(16.0, headY - 1.0, 20.2, headY + 2.8), spot)           // black patch around the eye
+        fill(ctx, oval(19.4, headY + 3.1, 23.8, headY + 6.2), muzzle)            // pink muzzle
         fill(ctx, oval(20.6, headY + 4.2, 21.2, headY + 5.0), nostril)
         fill(ctx, oval(22.0, headY + 4.2, 22.6, headY + 5.0), nostril)
         eye(ctx, 19.9, headY + 2.0)
     }
 
-    // MARK: 大公鸡
+    // MARK: Rooster
 
     private func rooster(_ ctx: GraphicsContext) {
         let body = Self.hex(0xd9774a), edge = Self.hex(0xa9502c), wing = Self.hex(0xb85c34)
         let neck = Self.hex(0xf0a45a), neckEdge = Self.hex(0xc9783a)
         let red = Self.hex(0xe63946), yellow = Self.hex(0xf2b134)
         let feathers = [Self.hex(0x1f3d45), Self.hex(0x2f5d62), Self.hex(0x3e7a6e)]
-        // 两条黄色的腿，也是一开一合，带三个脚趾
+        // Two yellow legs that also open and close, with three toes each
         for (index, lx) in [9.4, 11.8].enumerated() {
             let x0 = CGFloat(lx) + (index == 0 ? legShift : -legShift) * 0.6
             fill(ctx, rounded(x0, 12.6, x0 + 0.9, 17.2, 0.45), yellow)
             fill(ctx, rounded(x0 - 0.5, 16.5, x0 + 2.2, 17.2, 0.35), yellow)
         }
-        // 翘起来的大尾巴（三根深绿色羽毛）
+        // Big raised tail (three dark green feathers)
         fill(ctx, oval(1.0, 3.6, 8.6, 6.0, rotation: -0.95, around: (5.6, 7.6)), feathers[0])
         fill(ctx, oval(0.8, 6.0, 8.0, 8.4, rotation: -0.55, around: (5.6, 8.6)), feathers[1])
         fill(ctx, oval(1.2, 8.6, 7.8, 10.8, rotation: -0.15, around: (5.8, 9.6)), feathers[2])
-        // 身体和翅膀
+        // Body and wing
         fill(ctx, oval(5.3, 6.1, 16.5, 14.9), edge)
         fill(ctx, oval(5.8, 6.6, 16.0, 14.4), body)
         fill(ctx, oval(7.2, 9.0, 12.8, 12.6), wing)
-        // 脖子和头（吃东西时低下去）
+        // Neck and head (lowered while grazing)
         let dy: CGFloat = nibbling ? 3.0 : 0
         fill(ctx, oval(12.5, 4.3 + dy, 18.1, 11.5), neckEdge)
         fill(ctx, oval(13.0, 4.8 + dy, 17.6, 11.0), neck)
         fill(ctx, oval(13.1, 2.5 + dy, 18.9, 8.1 + dy), neckEdge)
         fill(ctx, oval(13.6, 3.0 + dy, 18.4, 7.6 + dy), neck)
-        // 红色的鸡冠、肉垂，黄色的嘴
+        // Red comb and wattle, yellow beak
         fill(ctx, oval(14.0, 1.6 + dy, 15.8, 3.4 + dy), red)
         fill(ctx, oval(15.1, 1.0 + dy, 17.1, 3.0 + dy), red)
         fill(ctx, oval(16.4, 1.6 + dy, 18.0, 3.4 + dy), red)
@@ -954,9 +965,9 @@ struct AnimalPainter {
         eye(ctx, 16.7, 4.8 + dy)
     }
 
-    // MARK: 画图小工具
+    // MARK: Drawing helpers
 
-    // 四条竖着的腿，两两一组，一组往里并、另一组往外分
+    // Four upright legs in two pairs: one pair moves in while the other moves out
     private func fourLegs(_ ctx: GraphicsContext, color: Color, width: CGFloat, top: CGFloat,
                           edge: Color? = nil, hoof: Color? = nil) {
         for (index, lx) in [6.0, 9.0, 13.5, 16.5].enumerated() {
@@ -967,7 +978,7 @@ struct AnimalPainter {
         }
     }
 
-    // 眼白 + 稍微偏右下的瞳孔，像在看前面
+    // White of the eye plus a pupil set slightly down and right, looking ahead
     private func eye(_ ctx: GraphicsContext, _ x: CGFloat, _ y: CGFloat) {
         fill(ctx, oval(x - 0.9, y - 0.9, x + 0.9, y + 0.9), .white)
         fill(ctx, oval(x - 0.35, y - 0.35, x + 0.45, y + 0.45), Self.pupil)
@@ -979,12 +990,12 @@ struct AnimalPainter {
 
     private func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x * u, y: y * u) }
 
-    // 用左上角、右下角来画椭圆（和 Pillow 一样）
+    // Oval from its top-left and bottom-right corners (like Pillow)
     private func oval(_ x0: CGFloat, _ y0: CGFloat, _ x1: CGFloat, _ y1: CGFloat) -> Path {
         Path(ellipseIn: CGRect(x: x0 * u, y: y0 * u, width: (x1 - x0) * u, height: (y1 - y0) * u))
     }
 
-    // 同上，再绕着某个点转一个角度（公鸡尾巴的羽毛用）
+    // Same, rotated around a point (for the rooster's tail feathers)
     private func oval(_ x0: CGFloat, _ y0: CGFloat, _ x1: CGFloat, _ y1: CGFloat,
                       rotation: CGFloat, around p: (CGFloat, CGFloat)) -> Path {
         let c = pt(p.0, p.1)
@@ -1018,8 +1029,8 @@ CLOTHESLINE_FILE_END
 
 cat > 'build-app.sh' <<'CLOTHESLINE_FILE_END'
 #!/bin/bash
-# 把程序打包成 Clothesline.app，装进“应用程序”文件夹，然后重新打开它
-# 用法：在项目文件夹里运行  ./build-app.sh
+# Packages the program as Clothesline.app, installs it in Applications, and reopens it
+# Usage: run ./build-app.sh in the project folder
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -1052,15 +1063,15 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>LSUIElement</key>
     <true/>
     <key>NSDesktopFolderUsageDescription</key>
-    <string>读取桌面上的截图和录屏，挂到晾衣绳上。</string>
+    <string>Reads the screenshots and screen recordings on your Desktop to hang them on the clothesline.</string>
 </dict>
 </plist>
 PLIST
 
 codesign --force --sign - "$APP"
 
-# 关掉正在运行的旧版本，装进“应用程序”，再打开。
-# 没有管理员权限、写不进 /Applications 的话，就装到自己的 ~/Applications 里
+# Quit the old version if it's running, install into Applications, and open it again.
+# Without permission to write to /Applications, install into your own ~/Applications instead
 DEST="/Applications"
 if [ ! -w "$DEST" ]; then
     DEST="$HOME/Applications"
@@ -1070,7 +1081,7 @@ pkill -x Clothesline 2>/dev/null || true
 rm -rf "$DEST/Clothesline.app"
 cp -R "$APP" "$DEST/"
 open "$DEST/Clothesline.app"
-echo "做好了，已经装到 $DEST/Clothesline.app 并打开"
+echo "Done. Installed $DEST/Clothesline.app and opened it."
 CLOTHESLINE_FILE_END
 
 cat > '.gitignore' <<'CLOTHESLINE_FILE_END'
@@ -1080,5 +1091,5 @@ cat > '.gitignore' <<'CLOTHESLINE_FILE_END'
 CLOTHESLINE_FILE_END
 
 chmod +x build-app.sh
-echo "开始编译（第一次大约 1 分钟）……"
+echo "Building (about 1 minute the first time)..."
 ./build-app.sh

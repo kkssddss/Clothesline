@@ -3,48 +3,48 @@ import UniformTypeIdentifiers
 
 struct ClotheslineView: View {
     @ObservedObject var store: LineStore
-    var topInset: CGFloat = 0          // 窗口最上面被菜单栏占掉的高度
+    var topInset: CGFloat = 0          // height taken by the menu bar at the top of the window
 
     var body: some View {
         GeometryReader { geo in
             let rope = Rope(width: geo.size.width, topY: topInset + 44)
 
             ZStack(alignment: .topLeading) {
-                // 挂着的截图和录屏，太多就左右滚动
+                // The hanging screenshots and recordings; scrolls sideways when there are too many
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: 22) {
                         ForEach(store.items) { item in
                             HangingCard(item: item)
                                 .onTapGesture { store.open(item) }
                                 .contextMenu {
-                                    Button("打开") { store.open(item) }
-                                    Button("在访达中显示") { store.revealInFinder(item) }
+                                    Button("Open") { store.open(item) }
+                                    Button("Show in Finder") { store.revealInFinder(item) }
                                     Divider()
-                                    Button("删除（移到废纸篓）", role: .destructive) { store.delete(item) }
+                                    Button("Move to Trash", role: .destructive) { store.delete(item) }
                                 }
                                 .modifier(PullUpToDelete(item: item, store: store,
                                                          leaving: store.leaving.contains(item.id)))
                                 .modifier(Sway(seed: item.seed))
-                                // 按自己在屏幕上的位置：先顺着那一段绳子的斜度转一下，再往下挪到绳子的高度，
-                                // 这样图片上沿正好贴着绳子
+                                // Using its position on screen: tilt to match that part of the rope, then move down to the rope's height,
+                                // so the picture's top edge sits right on the rope
                                 .visualEffect { content, proxy in
                                     let x = proxy.frame(in: .global).midX
                                     return content
                                         .rotationEffect(.radians(rope.angle(at: x)), anchor: .top)
                                         .offset(y: rope.y(at: x) - rope.topY)
                                 }
-                                // 新挂上来的淡入；飞走的那张动画放完已经看不见了，直接拿掉
+                                // New pictures fade in. A deleted one is already out of sight when its animation ends, so just remove it
                                 .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.85, anchor: .top)),
                                                         removal: .identity))
                         }
                     }
                     .padding(.horizontal, 60)
-                    .padding(.top, rope.topY - 2)          // 图片上沿就在绳子上（高 2 点，让绳子压着上沿）
+                    .padding(.top, rope.topY - 2)          // picture tops sit on the rope (2 pt higher, so the rope covers the top edge)
                     .padding(.bottom, rope.sag + 12)
                 }
-                .scrollClipDisabled()                      // 飞走的图片可以飞出滚动区域
+                .scrollClipDisabled()                      // flying pictures can leave the scroll area
 
-                // 绳子（画在图片前面）
+                // The rope (drawn in front of the pictures)
                 RopeShape(rope: rope)
                     .stroke(Color(red: 0.66, green: 0.52, blue: 0.38),
                             style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
@@ -55,7 +55,7 @@ struct ClotheslineView: View {
                     .shadow(color: .black.opacity(0.25), radius: 1, y: 1)
                     .allowsHitTesting(false)
 
-                // 小动物
+                // The animals
                 AnimalsView(rope: rope)
             }
         }
@@ -63,18 +63,18 @@ struct ClotheslineView: View {
     }
 }
 
-// 按住图片可以随便拖，它会跟着鼠标走：
-//   往上拉过 70 点再松手 → 删除（翻两圈、被风吹走）
-//   没拉够就松手 → 弹回绳子上
-//   往下拖 → 把文件拖到别的软件里（微信、Word……）
+// Hold a picture to drag it anywhere; it follows the mouse:
+//   pull it up more than 70 pt and let go → delete (flips twice, blows away)
+//   let go before that → springs back onto the rope
+//   drag it down → drop the file into another app (WeChat, Word...)
 struct PullUpToDelete: ViewModifier {
     let item: LineItem
     let store: LineStore
-    let leaving: Bool                           // 正在飞走
+    let leaving: Bool                           // flying away
     @State private var pull: CGSize = .zero
-    @State private var flight = 0.0             // 飞走动画走到哪了（0～1）
+    @State private var flight = 0.0             // fly-away animation progress (0 to 1)
     @State private var draggingFile = false
-    @GestureState private var pressing = false  // 手指还按着（拖动被打断时会自动变回 false）
+    @GestureState private var pressing = false  // still held down (turns false by itself if the drag is interrupted)
     private let threshold: CGFloat = 70
 
     func body(content: Content) -> some View {
@@ -82,7 +82,7 @@ struct PullUpToDelete: ViewModifier {
         content
             .overlay(alignment: .top) {
                 if ready {
-                    // 拉够了：出现一个小垃圾桶，提示松手就删
+                    // Pulled far enough: a small trash can shows that letting go deletes it
                     Image(systemName: "trash.fill")
                         .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(.white)
@@ -93,8 +93,8 @@ struct PullUpToDelete: ViewModifier {
                 }
             }
             .scaleEffect(ready ? 1.06 : 1)
-            .animation(.spring(duration: 0.2), value: ready)      // 只给垃圾桶和放大加动画，拖动本身不加
-            .offset(pull)                                          // 跟着鼠标走
+            .animation(.spring(duration: 0.2), value: ready)      // animate only the trash can and the zoom, not the drag itself
+            .offset(pull)                                          // follow the mouse
             .modifier(FloatAway(progress: flight))
             .gesture(
                 DragGesture(minimumDistance: 3, coordinateSpace: .global)
@@ -102,7 +102,7 @@ struct PullUpToDelete: ViewModifier {
                     .onChanged { value in
                         guard !leaving, !draggingFile else { return }
                         let t = value.translation
-                        // 明显往下拖：改成把文件拖出去
+                        // Clearly dragging down: drag the file out instead
                         if t.height > 28, t.height > abs(t.width), store.beginFileDrag(item) {
                             draggingFile = true
                             withAnimation(.spring(duration: 0.3)) { pull = .zero }
@@ -113,7 +113,7 @@ struct PullUpToDelete: ViewModifier {
                     .onEnded { value in
                         guard !leaving, !draggingFile else { return }
                         if value.translation.height < -threshold {
-                            store.delete(item)                     // 从拉上去的位置开始飞走
+                            store.delete(item)                     // fly away from where it was pulled to
                         } else {
                             springBack()
                         }
@@ -121,7 +121,7 @@ struct PullUpToDelete: ViewModifier {
             )
             .allowsHitTesting(!leaving)
             .onChange(of: pressing) { _, isPressing in
-                // 松手了（或拖动被打断）：没在飞走的话就弹回去
+                // Released (or the drag was interrupted): spring back unless it's flying away
                 if !isPressing {
                     draggingFile = false
                     if !store.leaving.contains(item.id) && pull != .zero { springBack() }
@@ -139,9 +139,9 @@ struct PullUpToDelete: ViewModifier {
     }
 }
 
-// 删除动画：上下翻两圈，然后被风轻轻带走，越飘越小（动作都收得比较小，不刺眼）
+// Delete animation: flips over twice, then a light wind carries it off, shrinking as it goes (kept small so it's easy on the eyes)
 struct FloatAway: ViewModifier, Animatable {
-    var progress: Double     // 0 = 好好挂着，1 = 已经飞走
+    var progress: Double     // 0 = hanging, 1 = gone
 
     nonisolated var animatableData: Double {
         get { progress }
@@ -150,11 +150,11 @@ struct FloatAway: ViewModifier, Animatable {
 
     func body(content: Content) -> some View {
         let p = progress
-        // 前 45%：上下翻两圈（慢-快-慢），一边翻一边缩小，几乎不带透视，不会突然变大。
-        // 翻完两圈后再多倒下去 78°，图片就平躺着，像一张纸被风托着
+        // First 45%: flip over twice (slow-fast-slow), shrinking while flipping, with almost no perspective so it never suddenly grows.
+        // After the two flips it tips another 78° and lies flat, like a sheet of paper carried by the wind
         let a = min(p / 0.45, 1)
         let flip = a * a * (3 - 2 * a)
-        // 后 55%：平躺着被风轻轻带走，往右上方飘，越来越小、越来越淡，飘的时候微微起伏
+        // Last 55%: lying flat, it drifts up and to the right, smaller and fainter, bobbing slightly
         let b = max(0, (p - 0.45) / 0.55)
         let scale = (1 - 0.45 * flip) * (1 - 0.92 * pow(b, 0.9))
         let x = 90 * pow(b, 1.3) + sin(b * 2 * .pi) * 8
@@ -172,11 +172,11 @@ struct FloatAway: ViewModifier, Animatable {
     }
 }
 
-// 风：几道白色的风线从左往右刮过去，末尾卷个小圈
+// Wind: a few white streaks sweep from left to right, each curling at the end
 struct WindStreaks: View {
     let progress: Double
 
-    // 每道风线：高度、起点、终点（都按画布比例）、尾巴卷多大、什么时候开始、多粗
+    // Each streak: height, start, end (as fractions of the canvas), curl size, start time, line width
     private static let streaks: [(y: Double, from: Double, to: Double, curl: Double, delay: Double, width: Double)] = [
         (0.55, 0.05, 0.70, 9, 0.30, 1.4),
         (0.30, 0.15, 0.80, 7, 0.40, 1.2),
@@ -186,7 +186,7 @@ struct WindStreaks: View {
     var body: some View {
         Canvas { context, size in
             for streak in Self.streaks {
-                let life = (progress - streak.delay) / 0.45          // 每道风线刮 45% 的时间
+                let life = (progress - streak.delay) / 0.45          // each streak lasts 45% of the animation
                 guard life > 0, life < 1 else { continue }
                 let path = Self.path(streak, in: size).trimmedPath(from: max(0, life - 0.4), to: life)
                 context.stroke(path, with: .color(.white.opacity(0.45 * sin(life * .pi))),
@@ -194,7 +194,7 @@ struct WindStreaks: View {
             }
         }
         .frame(width: 260, height: 170)
-        .shadow(color: .black.opacity(0.15), radius: 1)     // 淡淡的，浅色背景上也能隐约看到
+        .shadow(color: .black.opacity(0.15), radius: 1)     // faint, but still visible on light backgrounds
         .allowsHitTesting(false)
     }
 
@@ -204,11 +204,11 @@ struct WindStreaks: View {
         let x0 = s.from * size.width, x1 = s.to * size.width
         var path = Path()
         path.move(to: CGPoint(x: x0, y: y))
-        // 波浪形往右刮
+        // wavy line to the right
         path.addCurve(to: CGPoint(x: x1, y: y - 12),
                       control1: CGPoint(x: x0 + (x1 - x0) * 0.35, y: y - 16),
                       control2: CGPoint(x: x0 + (x1 - x0) * 0.65, y: y + 10))
-        // 末尾卷一个小圈
+        // small curl at the end
         if s.curl > 0 {
             path.addArc(center: CGPoint(x: x1, y: y - 12 - s.curl), radius: s.curl,
                         startAngle: .degrees(90), endAngle: .degrees(-200), clockwise: true)
@@ -217,7 +217,7 @@ struct WindStreaks: View {
     }
 }
 
-// 轻轻地来回晃，每张的幅度和快慢都不一样
+// Gentle swaying; each picture swings by a different amount and speed
 struct Sway: ViewModifier {
     let seed: Int
     @State private var swinging = false
@@ -245,7 +245,7 @@ struct HangingCard: View {
             Text(item.title)
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(.white)
-                .shadow(color: .black.opacity(0.8), radius: 1.5, y: 0.5)   // 背景透明，加阴影才看得清
+                .shadow(color: .black.opacity(0.8), radius: 1.5, y: 0.5)   // a shadow keeps it readable on the transparent background
                 .lineLimit(1)
                 .frame(maxWidth: 140)
         }
@@ -257,11 +257,11 @@ struct HangingCard: View {
         return CGSize(width: size.width * scale, height: size.height * scale)
     }
 
-    // 没有外框，只有图片本身
+    // No frame, just the picture itself
     @ViewBuilder
     private var picture: some View {
         if let preview = item.preview {
-            // 按图片自己的比例算出大小（最大 140×88），框和图片一样大，图片上沿才会正好在顶上
+            // Sized from the picture's own aspect ratio (max 140×88) so the frame matches the picture and its top edge is at the top
             let size = fitted(preview.size, maxWidth: 140, maxHeight: 88)
             Image(nsImage: preview)
                 .resizable()
@@ -274,7 +274,7 @@ struct HangingCard: View {
                             .foregroundStyle(.white, .black.opacity(0.4))
                     }
                 }
-                // 原来只在剪贴板里的截图，右下角放个小标记
+                // Screenshots that were only on the clipboard get a small badge in the bottom-right corner
                 .overlay(alignment: .bottomTrailing) {
                     if item.fromClipboard {
                         Image(systemName: "doc.on.clipboard.fill")

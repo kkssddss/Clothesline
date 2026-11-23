@@ -1,19 +1,19 @@
 import SwiftUI
 
-// 晾衣绳的形状：两头高、中间往下垂
+// The rope's shape: high at both ends, sagging in the middle
 struct Rope: Sendable {
     var width: CGFloat
-    var topY: CGFloat = 44      // 两头的高度（上面留点地方给小动物跳）
-    var sag: CGFloat = 38       // 中间往下垂多少
+    var topY: CGFloat = 44      // height of the ends (leaves room above for the animals)
+    var sag: CGFloat = 38       // how far the middle sags
 
-    // 绳子在 x 这个位置的高度
+    // rope height at x
     func y(at x: CGFloat) -> CGFloat {
         guard width > 0 else { return topY }
-        let u = (x - width / 2) / (width / 2)          // 最左 -1，中间 0，最右 1
+        let u = (x - width / 2) / (width / 2)          // -1 at the left end, 0 in the middle, 1 at the right end
         return topY + sag * (1 - u * u)
     }
 
-    // 绳子在 x 这个位置的倾斜角度（小动物站上去要跟着斜）
+    // rope angle at x (animals standing there tilt to match)
     func angle(at x: CGFloat) -> CGFloat {
         guard width > 0 else { return 0 }
         let half = width / 2
@@ -27,7 +27,7 @@ struct RopeShape: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
         path.move(to: CGPoint(x: 0, y: rope.topY))
-        // 控制点放在 2 倍下垂的位置，画出来正好是上面 y(at:) 那条曲线
+        // A control point at twice the sag draws exactly the y(at:) curve above
         path.addQuadCurve(to: CGPoint(x: rect.width, y: rope.topY),
                           control: CGPoint(x: rect.width / 2, y: rope.topY + rope.sag * 2))
         return path
