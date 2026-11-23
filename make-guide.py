@@ -1,4 +1,4 @@
-# 重新生成《本地制作指南.md》（改了代码以后运行：python3 make-guide.py .）
+# 重新生成《本地制作指南.md》和一键安装脚本 install.sh（改了代码以后运行：python3 make-guide.py .）
 import sys, os
 root = sys.argv[1]
 files = [
@@ -11,11 +11,47 @@ files = [
     ("build-app.sh", "bash"),
     (".gitignore", "text"),
 ]
+sources = {}
+for path, _ in files:
+    with open(os.path.join(root, path), encoding="utf-8") as f:
+        sources[path] = f.read().rstrip("\n")
+
+# ---------- 一键安装脚本 install.sh ----------
+END = "CLOTHESLINE_FILE_END"
+script = """#!/bin/bash
+# 一键做出“晾衣绳”：把全部源码写到 ~/code/Clothesline，然后编译、安装、打开。
+# 用法（在“终端”里）：bash install.sh
+# 想放到别的文件夹：bash install.sh 文件夹路径
+set -euo pipefail
+
+if ! xcode-select -p >/dev/null 2>&1; then
+    echo "还没装 Xcode 命令行工具。请先在终端运行：xcode-select --install"
+    echo "装好以后再运行一次：bash install.sh"
+    exit 1
+fi
+
+DIR="${1:-$HOME/code/Clothesline}"
+echo "把源码写到 $DIR ……"
+mkdir -p "$DIR/Sources/Clothesline"
+cd "$DIR"
+
+"""
+for path, _ in files:
+    code = sources[path]
+    assert END not in code, path
+    script += f"cat > '{path}' <<'{END}'\n{code}\n{END}\n\n"
+script += """chmod +x build-app.sh
+echo "开始编译（第一次大约 1 分钟）……"
+./build-app.sh
+"""
+with open(os.path.join(root, "install.sh"), "w", encoding="utf-8") as f:
+    f.write(script)
+os.chmod(os.path.join(root, "install.sh"), 0o755)
+
+# ---------- 本地制作指南.md ----------
 head = """# 晾衣绳（Clothesline）本地制作指南
 
 这份文件里有做出"晾衣绳"需要的**全部源码和步骤**。把它拷到另一台 Mac 上，照着做就能在本机编译出一模一样的 App，不用从 GitHub 下载代码。
-
-> 也可以把这份文件交给那台电脑上的 Claude Code，跟它说："按照这个文件，在本机把晾衣绳做出来。"
 
 ## 它能做什么
 
@@ -33,7 +69,20 @@ head = """# 晾衣绳（Clothesline）本地制作指南
 - 除此之外**不需要联网**，也不用任何第三方库。
 - 如果是公司电脑，先确认公司允许运行自己编译的程序。
 
-## 步骤
+## 最省事的做法：一个文件、一条命令
+
+1. 把仓库里的 **`install.sh`** 拿到那台 Mac 上（GitHub 网页上点下载，或者用 U 盘、邮件、微信"文件传输助手"发过去）。比如放在"下载"文件夹里。
+2. 打开"终端"，运行（如果文件不在"下载"里，把路径改成它实际的位置）：
+
+```bash
+bash ~/Downloads/install.sh
+```
+
+它会把全部源码写到 `~/code/Clothesline`，然后编译、安装、自动打开。第一次大约 1 分钟。
+
+如果中途报错，把终端里显示的错误整段复制给聊天机器人看，它一般能告诉你是哪一步出了问题。
+
+## 手动做法（不用 install.sh 的话）
 
 **1. 建文件夹**（在"终端"里运行）
 
@@ -55,14 +104,14 @@ head += """
 cd ~/code/Clothesline && chmod +x build-app.sh && ./build-app.sh
 ```
 
-第一次编译大约要 1 分钟。做好后，App 会装到"应用程序"文件夹并自动打开；没有管理员权限的话，会装到自己的 `~/Applications`。
+第一次编译大约要 1 分钟。
 
-**4. 第一次打开时**
+## 装好以后
 
+- App 会装到"应用程序"文件夹并自动打开；没有管理员权限的话，会装到自己的 `~/Applications`。
 - 如果弹窗问能不能访问"桌面"文件夹，点**允许**，不然找不到截图。
 - 如果系统提示"无法验证开发者"，就在"应用程序"里右键点 Clothesline，选**打开**。
-
-**以后改了代码**：再运行一次 `./build-app.sh` 就行，它会关掉旧的、装好新的、重新打开。
+- **以后改了代码**：在 `~/code/Clothesline` 里再运行一次 `./build-app.sh` 就行，它会关掉旧的、装好新的、重新打开。
 
 ---
 
@@ -71,10 +120,9 @@ cd ~/code/Clothesline && chmod +x build-app.sh && ./build-app.sh
 """
 body = ""
 for path, lang in files:
-    with open(os.path.join(root, path), encoding="utf-8") as f:
-        code = f.read().rstrip("\n")
+    code = sources[path]
     assert "```" not in code, path
     body += f"### `{path}`\n\n```{lang}\n{code}\n```\n\n"
 with open(os.path.join(root, "本地制作指南.md"), "w", encoding="utf-8") as f:
     f.write(head + body.rstrip("\n") + "\n")
-print("written", len((head + body).splitlines()), "lines")
+print("written guide", len((head + body).splitlines()), "lines; install.sh", len(script.splitlines()), "lines")
